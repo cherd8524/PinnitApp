@@ -1,0 +1,76 @@
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+
+type SettingsRowProps = {
+  icon: React.ComponentProps<typeof Ionicons>["name"];
+  label: string;
+  onPress?: () => void;
+  showChevron?: boolean;
+  isDark?: boolean;
+};
+
+export function SettingsRow({
+  icon,
+  label,
+  onPress,
+  showChevron = true,
+  isDark = false,
+}: SettingsRowProps) {
+  return (
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={styles.row}
+    >
+      <View style={styles.rowLeft}>
+        <View style={styles.iconWrapper}>
+          <Ionicons name={icon} size={20} color="#007AFF" />
+        </View>
+        <Text
+          style={[
+            styles.rowLabel,
+            { color: isDark ? "#F9FAFB" : "#0F172A" },
+          ]}
+        >
+          {label}
+        </Text>
+      </View>
+      {showChevron && (
+        <MaterialCommunityIcons
+          name="chevron-right"
+          size={22}
+          color={isDark ? "#6B7280" : "#9CA3AF"}
+        />
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const styles = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  rowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconWrapper: {
+    height: 36,
+    width: 36,
+    borderRadius: 18,
+    backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  rowLabel: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#0F172A",
+  },
+});
