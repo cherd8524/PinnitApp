@@ -13,52 +13,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SettingsRow } from "@/components/SettingsRow";
 
 const DARK_MODE_KEY = "@pinnit_dark_mode";
-
-type SettingsRowProps = {
-  icon: React.ComponentProps<typeof Ionicons>["name"];
-  label: string;
-  onPress?: () => void;
-  showChevron?: boolean;
-};
-
-function SettingsRow({
-  icon,
-  label,
-  onPress,
-  showChevron = true,
-  isDark = false,
-}: SettingsRowProps & { isDark?: boolean }) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.7}
-      onPress={onPress}
-      style={rowStyles.row}
-    >
-      <View style={rowStyles.rowLeft}>
-        <View style={rowStyles.iconWrapper}>
-          <Ionicons name={icon} size={20} color="#007AFF" />
-        </View>
-        <Text
-          style={[
-            rowStyles.rowLabel,
-            { color: isDark ? "#F9FAFB" : "#0F172A" },
-          ]}
-        >
-          {label}
-        </Text>
-      </View>
-      {showChevron && (
-        <MaterialCommunityIcons
-          name="chevron-right"
-          size={22}
-          color={isDark ? "#6B7280" : "#9CA3AF"}
-        />
-      )}
-    </TouchableOpacity>
-  );
-}
 
 export default function SettingsScreen() {
   const systemColorScheme = useColorScheme();
@@ -141,9 +98,9 @@ export default function SettingsScreen() {
         <View style={styles.header}>
           <Text
             style={[
-              styles.headerTitle, 
+              styles.headerTitle,
               { color: colors.textPrimary },
-              { marginTop: 10}
+              { marginTop: 10 }
             ]}
           >
             Settings
@@ -159,7 +116,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.sectionLabel }]}
           >
-            Account
+            Location
           </Text>
           <View
             style={[
@@ -171,9 +128,14 @@ export default function SettingsScreen() {
             ]}
           >
             <SettingsRow
-              icon="person-outline"
-              label="Profile"
-              onPress={() => { }}
+              icon="location-outline"
+              label="Location Accuracy"
+              onPress={() => {
+                Alert.alert(
+                  "Location Accuracy",
+                  "High accuracy mode uses more battery but provides more precise location data."
+                );
+              }}
               isDark={isDark}
             />
             <View
@@ -183,9 +145,60 @@ export default function SettingsScreen() {
               ]}
             />
             <SettingsRow
-              icon="mail-outline"
-              label="Email & Sign-in"
-              onPress={() => { }}
+              icon="refresh-outline"
+              label="Update Interval"
+              onPress={() => {
+                Alert.alert(
+                  "Update Interval",
+                  "Configure how often your location is updated on the map."
+                );
+              }}
+              isDark={isDark}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text
+            style={[styles.sectionLabel, { color: colors.sectionLabel }]}
+          >
+            Map
+          </Text>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <SettingsRow
+              icon="map-outline"
+              label="Map Style"
+              onPress={() => {
+                Alert.alert(
+                  "Map Style",
+                  "Choose between standard, satellite, or terrain map views."
+                );
+              }}
+              isDark={isDark}
+            />
+            <View
+              style={[
+                styles.cardDivider,
+                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+              ]}
+            />
+            <SettingsRow
+              icon="resize-outline"
+              label="Default Zoom Level"
+              onPress={() => {
+                Alert.alert(
+                  "Default Zoom Level",
+                  "Set the default zoom level when opening the map."
+                );
+              }}
               isDark={isDark}
             />
           </View>
@@ -206,30 +219,6 @@ export default function SettingsScreen() {
               },
             ]}
           >
-            <SettingsRow
-              icon="compass-outline"
-              label="Units & Format"
-              onPress={() => { }}
-              isDark={isDark}
-            />
-            <View
-              style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
-              ]}
-            />
-            <SettingsRow
-              icon="notifications-outline"
-              label="Notifications"
-              onPress={() => { }}
-              isDark={isDark}
-            />
-            <View
-              style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
-              ]}
-            />
 
             <View style={styles.darkRow}>
               <View style={styles.darkRowLeft}>
@@ -279,7 +268,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.sectionLabel }]}
           >
-            Support
+            Data
           </Text>
           <View
             style={[
@@ -291,9 +280,14 @@ export default function SettingsScreen() {
             ]}
           >
             <SettingsRow
-              icon="help-circle-outline"
-              label="Help Center"
-              onPress={() => { }}
+              icon="download-outline"
+              label="Export Pins"
+              onPress={() => {
+                Alert.alert(
+                  "Export Pins",
+                  "Export all your pinned locations as a JSON file."
+                );
+              }}
               isDark={isDark}
             />
             <View
@@ -303,9 +297,14 @@ export default function SettingsScreen() {
               ]}
             />
             <SettingsRow
-              icon="chatbubbles-outline"
-              label="Contact Support"
-              onPress={() => { }}
+              icon="cloud-upload-outline"
+              label="Import Pins"
+              onPress={() => {
+                Alert.alert(
+                  "Import Pins",
+                  "Import pinned locations from a JSON file."
+                );
+              }}
               isDark={isDark}
             />
             <View
@@ -314,10 +313,78 @@ export default function SettingsScreen() {
                 { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
               ]}
             />
+            <SettingsRow
+              icon="cloud-done-outline"
+              label="Backup & Sync"
+              onPress={() => {
+                Alert.alert(
+                  "Backup & Sync",
+                  "Backup your pins to cloud storage or sync across devices."
+                );
+              }}
+              isDark={isDark}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text
+            style={[styles.sectionLabel, { color: colors.sectionLabel }]}
+          >
+            About
+          </Text>
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+          >
             <SettingsRow
               icon="information-circle-outline"
               label="About Pinnit"
-              onPress={() => { }}
+              onPress={() => {
+                Alert.alert(
+                  "About Pinnit",
+                  "Pinnit v1.0.0\n\nA simple and elegant location pinning app.\n\nMade with ❤️ for keeping track of your favorite places.\n\n━━━━━━━━━━━━━━━━━━━━\n\nDeveloper Information:\n\nDeveloped by: CS-VRU67/2-68\nCourse: SCS337\nProject: PinnitApp\n\nThis app was created as part of a course project to demonstrate location-based features and modern mobile app development."
+                );
+              }}
+              isDark={isDark}
+            />
+            <View
+              style={[
+                styles.cardDivider,
+                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+              ]}
+            />
+            <SettingsRow
+              icon="shield-checkmark-outline"
+              label="Privacy Policy"
+              onPress={() => {
+                Alert.alert(
+                  "Privacy Policy",
+                  "Your location data is stored locally on your device. We do not collect or share any personal information."
+                );
+              }}
+              isDark={isDark}
+            />
+            <View
+              style={[
+                styles.cardDivider,
+                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+              ]}
+            />
+            <SettingsRow
+              icon="document-text-outline"
+              label="Terms of Service"
+              onPress={() => {
+                Alert.alert(
+                  "Terms of Service",
+                  "By using Pinnit, you agree to use the app responsibly and respect location privacy."
+                );
+              }}
               isDark={isDark}
             />
           </View>
@@ -364,34 +431,6 @@ export default function SettingsScreen() {
     </SafeAreaView>
   );
 }
-
-const rowStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  rowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconWrapper: {
-    height: 36,
-    width: 36,
-    borderRadius: 18,
-    backgroundColor: "#DBEAFE",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  rowLabel: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#0F172A",
-  },
-});
 
 const styles = StyleSheet.create({
   safeArea: {

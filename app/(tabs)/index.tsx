@@ -1,53 +1,40 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+    ActivityIndicator,
+    Alert,
     FlatList,
+    Modal,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-
-type PinnitItem = {
-    id: string;
-    name: string;
-    latitude: number;
-    longitude: number;
-    createdAt: string;
-};
-
-const MOCK_PINS: PinnitItem[] = [
-    {
-        id: "1",
-        name: "Home Studio",
-        latitude: 13.7563,
-        longitude: 100.5018,
-        createdAt: "Pinned 2 min ago",
-    },
-    {
-        id: "2",
-        name: "Favorite Café",
-        latitude: 13.7445,
-        longitude: 100.5347,
-        createdAt: "Pinned yesterday",
-    },
-    {
-        id: "3",
-        name: "Sunset Viewpoint",
-        latitude: 18.7883,
-        longitude: 98.9853,
-        createdAt: "Pinned last week",
-    },
-];
+import * as Location from "expo-location";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter, useFocusEffect } from "expo-router";
+import { PinnitItem } from "@/types/pinnit";
+import { getLocationName } from "@/utils/geocoding";
+import { formatTimeAgo } from "@/utils/format";
+import { loadPins, savePins } from "@/utils/storage";
+import { PinItem } from "@/components/PinItem";
 
 export default function Index() {
     const colorScheme = useColorScheme();
-    const [currentLocation] = useState({
-        latitude: 13.7563,
-        longitude: 100.5018,
-    });
+    const router = useRouter();
+    const [currentLocation, setCurrentLocation] = useState<{
+        latitude: number;
+        longitude: number;
+    } | null>(null);
+    const [isLoadingLocation, setIsLoadingLocation] = useState(true);
+    const [pins, setPins] = useState<PinnitItem[]>([]);
+    const [isLoadingPins, setIsLoadingPins] = useState(true);
+    const [showPinModal, setShowPinModal] = useState(false);
+    const [pinName, setPinName] = useState("");
+    const [isLoadingPinName, setIsLoadingPinName] = useState(false);
 
     const isDark = colorScheme === "dark";
 
@@ -61,38 +48,189 @@ export default function Index() {
         [isDark]
     );
 
-    const renderItem = ({ item }: { item: PinnitItem }) => (
-        <View
-            style={[
-                styles.pinCard,
-                {
-                    backgroundColor: colors.card,
-                    shadowColor: "#0F172A",
-                },
-            ]}
-        >
-            <View style={styles.pinCardTextColumn}>
-                <Text
-                    style={[styles.pinTitle, { color: colors.textPrimary }]}
-                    numberOfLines={1}
-                >
-                    {item.name}
-                </Text>
-                <Text style={styles.pinCoord} numberOfLines={1}>
-                    {item.latitude.toFixed(4)}°, {item.longitude.toFixed(4)}°
-                </Text>
-                <Text
-                    style={[styles.pinMeta, { color: colors.textSecondary }]}
-                >
-                    {item.createdAt}
-                </Text>
-            </View>
+    // Load pins on mount
+    useEffect(() => {
+        (async () => {
+            const loadedPins = await loadPins();
+            setPins(loadedPins);
+            setIsLoadingPins(false);
+        })();
+    }, []);
 
-            <TouchableOpacity style={styles.viewMapButton}>
-                <Ionicons name="map-outline" size={16} color="#007AFF" />
-                <Text style={styles.viewMapLabel}>View Map</Text>
-            </TouchableOpacity>
-        </View>
+    // Reload pins when screen is focused (to show newly added pins from Map screen)
+    useFocusEffect(
+        useCallback(() => {
+            const loadAllPins = async () => {
+                try {
+                    const loadedPins = await loadPins();
+                    setPins(loadedPins);
+                } catch (error) {
+                    console.error("Error loading pins:", error);
+                }
+            };
+            loadAllPins();
+        }, [])
+    );
+
+    useEffect(() => {
+        let subscription: Location.LocationSubscription | null = null;
+
+        (async () => {
+            try {
+                const { status } =
+                    await Location.requestForegroundPermissionsAsync();
+
+                if (status !== "granted") {
+                    setIsLoadingLocation(false);
+                    return;
+                }
+
+                // Get initial location
+                const loc = await Location.getCurrentPositionAsync({
+                    accuracy: Location.Accuracy.High,
+                });
+
+                setCurrentLocation({
+                    latitude: loc.coords.latitude,
+                    longitude: loc.coords.longitude,
+                });
+                setIsLoadingLocation(false);
+
+                // Watch position for real-time updates
+                subscription = await Location.watchPositionAsync(
+                    {
+                        accuracy: Location.Accuracy.High,
+                        timeInterval: 2000, // Update every 2 seconds
+                        distanceInterval: 10, // Update every 10 meters
+                    },
+                    (location) => {
+                        setCurrentLocation({
+                            latitude: location.coords.latitude,
+                            longitude: location.coords.longitude,
+                        });
+                    }
+                );
+            } catch (error) {
+                console.error("Error getting location:", error);
+                setIsLoadingLocation(false);
+            }
+        })();
+
+        return () => {
+            if (subscription) {
+                subscription.remove();
+            }
+        };
+    }, []);
+
+    const handlePinCurrentSpot = async () => {
+        if (!currentLocation) return;
+
+        // Show modal and fetch location name
+        setShowPinModal(true);
+        setPinName("");
+        setIsLoadingPinName(true);
+
+        try {
+            const locationName = await getLocationName(
+                currentLocation.latitude,
+                currentLocation.longitude
+            );
+            setPinName(locationName);
+        } catch (error) {
+            console.error("Error fetching location name:", error);
+            setPinName("Location Name");
+        } finally {
+            setIsLoadingPinName(false);
+        }
+    };
+
+    const handleConfirmPin = async () => {
+        if (!currentLocation) return;
+
+        const finalName = pinName.trim() || "Location Name";
+
+        try {
+            const timestamp = Date.now();
+            const newPin: PinnitItem = {
+                id: `pin_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
+                name: finalName,
+                latitude: currentLocation.latitude,
+                longitude: currentLocation.longitude,
+                createdAt: formatTimeAgo(timestamp),
+                timestamp: timestamp,
+            };
+
+            const updatedPins = [newPin, ...pins];
+            await savePins(updatedPins);
+            setPins(updatedPins);
+
+            setShowPinModal(false);
+            setPinName("");
+            Alert.alert("Success", "Location pinned successfully!");
+        } catch (error) {
+            console.error("Error pinning location:", error);
+            Alert.alert("Error", "Failed to pin location. Please try again.");
+        }
+    };
+
+    const handleCancelPin = () => {
+        setShowPinModal(false);
+        setPinName("");
+    };
+
+    const handleDeletePin = async (pinId: string) => {
+        Alert.alert(
+            "Delete Location",
+            "Are you sure you want to delete this location?",
+            [
+                {
+                    text: "Cancel",
+                    style: "cancel",
+                },
+                {
+                    text: "Delete",
+                    style: "destructive",
+                    onPress: async () => {
+                        try {
+                            const updatedPins = pins.filter(
+                                (pin) => pin.id !== pinId
+                            );
+                            await savePins(updatedPins);
+                            setPins(updatedPins);
+                        } catch (error) {
+                            console.error("Error deleting pin:", error);
+                            Alert.alert(
+                                "Error",
+                                "Failed to delete location. Please try again."
+                            );
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleViewMap = (item: PinnitItem) => {
+        router.push({
+            pathname: "/map",
+            params: {
+                latitude: item.latitude.toString(),
+                longitude: item.longitude.toString(),
+                name: item.name,
+                timestamp: Date.now().toString(), // Add timestamp to force re-render
+            },
+        });
+    };
+
+
+    const renderItem = ({ item }: { item: PinnitItem }) => (
+        <PinItem
+            item={item}
+            onDelete={handleDeletePin}
+            onViewMap={handleViewMap}
+            colors={colors}
+        />
     );
 
     return (
@@ -143,26 +281,55 @@ export default function Index() {
                             <Text style={styles.locationLabel}>
                                 Current Location
                             </Text>
-                            <Text
-                                style={[
-                                    styles.locationCoord,
-                                    { color: colors.textPrimary },
-                                ]}
-                                numberOfLines={1}
-                            >
-                                {currentLocation.latitude.toFixed(5)}°,{" "}
-                                {currentLocation.longitude.toFixed(5)}°
-                            </Text>
+                            {isLoadingLocation ? (
+                                <View style={styles.loadingRow}>
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#007AFF"
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.locationCoord,
+                                            { color: colors.textSecondary },
+                                            { marginLeft: 8 },
+                                        ]}
+                                    >
+                                        Getting location...
+                                    </Text>
+                                </View>
+                            ) : currentLocation ? (
+                                <Text
+                                    style={[
+                                        styles.locationCoord,
+                                        { color: colors.textPrimary },
+                                    ]}
+                                    numberOfLines={1}
+                                >
+                                    {currentLocation.latitude.toFixed(5)}°,{" "}
+                                    {currentLocation.longitude.toFixed(5)}°
+                                </Text>
+                            ) : (
+                                <Text
+                                    style={[
+                                        styles.locationCoord,
+                                        { color: colors.textSecondary },
+                                    ]}
+                                >
+                                    Location unavailable
+                                </Text>
+                            )}
                         </View>
                     </View>
 
                     <TouchableOpacity
-                        style={styles.pinButton}
+                        style={[
+                            styles.pinButton,
+                            (!currentLocation || isLoadingLocation) &&
+                            styles.pinButtonDisabled,
+                        ]}
                         activeOpacity={0.9}
-                        onPress={() => {
-                            // TODO: integrate with real location & storage
-                            console.log("Pin current spot");
-                        }}
+                        disabled={!currentLocation || isLoadingLocation}
+                        onPress={handlePinCurrentSpot}
                     >
                         <Ionicons
                             name="pin-outline"
@@ -192,19 +359,160 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            {MOCK_PINS.length} locations
+                            {pins.length} location{pins.length !== 1 ? "s" : ""}
                         </Text>
                     </View>
 
-                    <FlatList
-                        data={MOCK_PINS}
-                        keyExtractor={(item) => item.id}
-                        renderItem={renderItem}
-                        contentContainerStyle={styles.listContent}
-                        showsVerticalScrollIndicator={false}
-                    />
+                    {isLoadingPins ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color="#007AFF" />
+                        </View>
+                    ) : pins.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Ionicons
+                                name="location-outline"
+                                size={48}
+                                color={colors.textSecondary}
+                            />
+                            <Text
+                                style={[
+                                    styles.emptyText,
+                                    { color: colors.textSecondary },
+                                ]}
+                            >
+                                No pinned locations yet
+                            </Text>
+                            <Text
+                                style={[
+                                    styles.emptySubtext,
+                                    { color: colors.textSecondary },
+                                ]}
+                            >
+                                Pin your current location to get started
+                            </Text>
+                        </View>
+                    ) : (
+                        <FlatList
+                            data={pins}
+                            keyExtractor={(item) => item.id}
+                            renderItem={renderItem}
+                            contentContainerStyle={styles.listContent}
+                            showsVerticalScrollIndicator={false}
+                        />
+                    )}
                 </View>
             </View>
+
+            {/* Pin Name Modal */}
+            <Modal
+                visible={showPinModal}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={handleCancelPin}
+            >
+                <View style={styles.modalOverlay}>
+                    <View
+                        style={[
+                            styles.modalContent,
+                            {
+                                backgroundColor: colors.card,
+                            },
+                        ]}
+                    >
+                        <Text
+                            style={[
+                                styles.modalTitle,
+                                { color: colors.textPrimary },
+                            ]}
+                        >
+                            Pin Location
+                        </Text>
+                        <Text
+                            style={[
+                                styles.modalSubtitle,
+                                { color: colors.textSecondary },
+                            ]}
+                        >
+                            Enter a name for this location
+                        </Text>
+
+                        <View style={styles.inputContainer}>
+                            {isLoadingPinName ? (
+                                <View style={styles.inputLoadingContainer}>
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#007AFF"
+                                    />
+                                    <Text
+                                        style={[
+                                            styles.inputLoadingText,
+                                            { color: colors.textSecondary },
+                                        ]}
+                                    >
+                                        Getting location name...
+                                    </Text>
+                                </View>
+                            ) : (
+                                <TextInput
+                                    style={[
+                                        styles.nameInput,
+                                        {
+                                            backgroundColor: isDark
+                                                ? "#1F2937"
+                                                : "#F9FAFB",
+                                            color: colors.textPrimary,
+                                            borderColor: isDark
+                                                ? "#374151"
+                                                : "#E5E7EB",
+                                        },
+                                    ]}
+                                    placeholder="Location Name"
+                                    placeholderTextColor={colors.textSecondary}
+                                    value={pinName}
+                                    onChangeText={setPinName}
+                                    autoFocus={true}
+                                />
+                            )}
+                        </View>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.cancelButton,
+                                    {
+                                        borderColor: isDark
+                                            ? "#374151"
+                                            : "#E5E7EB",
+                                    },
+                                ]}
+                                onPress={handleCancelPin}
+                            >
+                                <Text
+                                    style={[
+                                        styles.cancelButtonText,
+                                        { color: colors.textPrimary },
+                                    ]}
+                                >
+                                    Cancel
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.confirmButton,
+                                ]}
+                                onPress={handleConfirmPin}
+                                disabled={isLoadingPinName}
+                            >
+                                <Text style={styles.confirmButtonText}>
+                                    Pin
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -212,7 +520,7 @@ export default function Index() {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        
+
     },
     screen: {
         flex: 1,
@@ -271,6 +579,11 @@ const styles = StyleSheet.create({
         marginTop: 2,
         fontSize: 14,
     },
+    loadingRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        marginTop: 2,
+    },
     pinButton: {
         marginTop: 8,
         height: 48,
@@ -293,6 +606,9 @@ const styles = StyleSheet.create({
         textTransform: "uppercase",
         color: "#FFFFFF",
     },
+    pinButtonDisabled: {
+        opacity: 0.5,
+    },
     listContainer: {
         flex: 1,
     },
@@ -313,10 +629,34 @@ const styles = StyleSheet.create({
         paddingTop: 4,
         paddingBottom: 8,
     },
+    swipeContainer: {
+        marginBottom: 12,
+        position: "relative",
+        borderRadius: 18,
+        overflow: "hidden",
+    },
+    deleteButtonContainer: {
+        position: "absolute",
+        right: 0,
+        top: 0,
+        bottom: 0,
+        justifyContent: "center",
+        alignItems: "center",
+        width: 80,
+        borderTopRightRadius: 18,
+        borderBottomRightRadius: 18,
+        overflow: "hidden",
+    },
+    deleteButton: {
+        width: 80,
+        height: "100%",
+        backgroundColor: "#EF4444",
+        justifyContent: "center",
+        alignItems: "center",
+    },
     pinCard: {
         borderRadius: 18,
         padding: 16,
-        marginBottom: 12,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -357,5 +697,101 @@ const styles = StyleSheet.create({
         fontSize: 11,
         fontWeight: "600",
         color: "#2563EB",
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingVertical: 40,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+        paddingVertical: 60,
+    },
+    emptyText: {
+        marginTop: 16,
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    emptySubtext: {
+        marginTop: 8,
+        fontSize: 14,
+        textAlign: "center",
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: "rgba(0, 0, 0, 0.5)",
+        justifyContent: "center",
+        alignItems: "center",
+        padding: 20,
+    },
+    modalContent: {
+        width: "100%",
+        maxWidth: 400,
+        borderRadius: 24,
+        padding: 24,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
+    },
+    modalTitle: {
+        fontSize: 24,
+        fontWeight: "700",
+        marginBottom: 8,
+    },
+    modalSubtitle: {
+        fontSize: 14,
+        marginBottom: 20,
+    },
+    inputContainer: {
+        marginBottom: 24,
+    },
+    inputLoadingContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "center",
+        paddingVertical: 16,
+    },
+    inputLoadingText: {
+        marginLeft: 12,
+        fontSize: 14,
+    },
+    nameInput: {
+        height: 52,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        fontSize: 16,
+        borderWidth: 1,
+    },
+    modalButtons: {
+        flexDirection: "row",
+        gap: 12,
+    },
+    modalButton: {
+        flex: 1,
+        height: 48,
+        borderRadius: 12,
+        alignItems: "center",
+        justifyContent: "center",
+    },
+    cancelButton: {
+        borderWidth: 1,
+        backgroundColor: "transparent",
+    },
+    confirmButton: {
+        backgroundColor: "#007AFF",
+    },
+    cancelButtonText: {
+        fontSize: 16,
+        fontWeight: "600",
+    },
+    confirmButtonText: {
+        fontSize: 16,
+        fontWeight: "600",
+        color: "#FFFFFF",
     },
 });
