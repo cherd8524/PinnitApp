@@ -348,7 +348,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 Alert.alert(
                   "About Pinnit",
-                  "Pinnit v1.0.0\n\nA simple and elegant location pinning app.\n\nMade with ❤️ for keeping track of your favorite places.\n\n━━━━━━━━━━━━━━━━━━━━\n\nDeveloper Information:\n\nDeveloped by: CS-VRU67/2-68\nCourse: SCS337\nProject: PinnitApp\n\nThis app was created as part of a course project to demonstrate location-based features and modern mobile app development."
+                  "Pinnit v1.0.0\n\nA simple and elegant location pinning app.\n\nMade with ❤️ for keeping track of your favorite places.\n\n━━━━━━━━━━━━━━━━━━━━\n\nDeveloper Information:\n\nDeveloped by: Cherdsak Kh.\nCourse: SCS337\nProject: PinnitApp\n\nThis app was created as part of a course project to demonstrate location-based features and modern mobile app development."
                 );
               }}
               isDark={isDark}

@@ -7,6 +7,7 @@ import {
   PanResponder,
   Dimensions,
   StyleSheet,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { PinnitItem } from "@/types/pinnit";
@@ -16,6 +17,7 @@ type PinItemProps = {
   item: PinnitItem;
   onDelete: (id: string) => void;
   onViewMap: (item: PinnitItem) => void;
+  onEdit: (item: PinnitItem) => void;
   colors: {
     card: string;
     textPrimary: string;
@@ -27,6 +29,7 @@ export function PinItem({
   item,
   onDelete,
   onViewMap,
+  onEdit,
   colors,
 }: PinItemProps) {
   const [isSwiped, setIsSwiped] = useState(false);
@@ -126,30 +129,36 @@ export function PinItem({
         ]}
         {...panResponder.panHandlers}
       >
-        <View style={styles.pinCardTextColumn}>
-          <Text
-            style={[styles.pinTitle, { color: colors.textPrimary }]}
-            numberOfLines={1}
-          >
-            {item.name}
-          </Text>
-          <Text style={styles.pinCoord} numberOfLines={1}>
-            {item.latitude.toFixed(4)}°, {item.longitude.toFixed(4)}°
-          </Text>
-          <Text
-            style={[styles.pinMeta, { color: colors.textSecondary }]}
-          >
-            {formatTimeAgo(item.timestamp)}
-          </Text>
-        </View>
-
-        <TouchableOpacity
-          style={styles.viewMapButton}
-          onPress={() => onViewMap(item)}
+        <Pressable
+          style={styles.cardContent}
+          onLongPress={() => onEdit(item)}
+          delayLongPress={400}
         >
-          <Ionicons name="map-outline" size={16} color="#007AFF" />
-          <Text style={styles.viewMapLabel}>View Map</Text>
-        </TouchableOpacity>
+          <View style={styles.pinCardTextColumn}>
+            <Text
+              style={[styles.pinTitle, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
+              {item.name}
+            </Text>
+            <Text style={styles.pinCoord} numberOfLines={1}>
+              {item.latitude.toFixed(4)}°, {item.longitude.toFixed(4)}°
+            </Text>
+            <Text
+              style={[styles.pinMeta, { color: colors.textSecondary }]}
+            >
+              {formatTimeAgo(item.timestamp)}
+            </Text>
+          </View>
+
+          <TouchableOpacity
+            style={styles.viewMapButton}
+            onPress={() => onViewMap(item)}
+          >
+            <Ionicons name="map-outline" size={16} color="#007AFF" />
+            <Text style={styles.viewMapLabel}>View Map</Text>
+          </TouchableOpacity>
+        </Pressable>
       </Animated.View>
     </View>
   );
@@ -181,15 +190,17 @@ const styles = StyleSheet.create({
   pinCard: {
     borderRadius: 18,
     padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
     borderWidth: 1,
     borderColor: "#E5E7EB",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 3,
+  },
+  cardContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   pinCardTextColumn: {
     flex: 1,

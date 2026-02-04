@@ -35,6 +35,9 @@ export default function Index() {
     const [showPinModal, setShowPinModal] = useState(false);
     const [pinName, setPinName] = useState("");
     const [isLoadingPinName, setIsLoadingPinName] = useState(false);
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [editingPin, setEditingPin] = useState<PinnitItem | null>(null);
+    const [editPinName, setEditPinName] = useState("");
 
     const isDark = colorScheme === "dark";
 
@@ -211,6 +214,43 @@ export default function Index() {
         );
     };
 
+    const handleStartEditPin = (item: PinnitItem) => {
+        setEditingPin(item);
+        setEditPinName(item.name);
+        setIsEditModalVisible(true);
+    };
+
+    const handleCancelEditPin = () => {
+        setIsEditModalVisible(false);
+        setEditingPin(null);
+        setEditPinName("");
+    };
+
+    const handleConfirmEditPin = async () => {
+        if (!editingPin) return;
+
+        const finalName = editPinName.trim();
+        if (!finalName) {
+            Alert.alert("Invalid name", "Please enter a name for this location.");
+            return;
+        }
+
+        try {
+            const updatedPins = pins.map((pin) =>
+                pin.id === editingPin.id ? { ...pin, name: finalName } : pin
+            );
+            await savePins(updatedPins);
+            setPins(updatedPins);
+            handleCancelEditPin();
+        } catch (error) {
+            console.error("Error updating pin name:", error);
+            Alert.alert(
+                "Error",
+                "Failed to update location name. Please try again."
+            );
+        }
+    };
+
     const handleViewMap = (item: PinnitItem) => {
         router.push({
             pathname: "/map",
@@ -229,6 +269,7 @@ export default function Index() {
             item={item}
             onDelete={handleDeletePin}
             onViewMap={handleViewMap}
+            onEdit={handleStartEditPin}
             colors={colors}
         />
     );
@@ -240,22 +281,45 @@ export default function Index() {
             <View style={styles.screen}>
                 {/* Large Title Header */}
                 <View style={styles.header}>
-                    <Text
-                        style={[
-                            styles.title,
-                            { color: colors.textPrimary },
-                            { marginTop: 10 },
-                        ]}
-                    >
-                        Pinnit
-                    </Text>
+                    <View style={styles.headerTopRow}>
+                        <View>
+                            <Text
+                                style={[
+                                    styles.appLabel,
+                                    { color: colors.textSecondary },
+                                ]}
+                            >
+                                Your personal pinboard
+                            </Text>
+                            <Text
+                                style={[
+                                    styles.title,
+                                    { color: colors.textPrimary },
+                                ]}
+                            >
+                                Pinnit
+                            </Text>
+                        </View>
+                        <View style={styles.headerBadge}>
+                            <Ionicons
+                                name="pin-outline"
+                                size={14}
+                                color="#1D4ED8"
+                            />
+                            <Text style={styles.headerBadgeText}>
+                                Saved spots
+                            </Text>
+                        </View>
+                    </View>
+
                     <Text
                         style={[
                             styles.subtitle,
                             { color: colors.textSecondary },
                         ]}
                     >
-                        Pin the places that matter. Come back to them anytime.
+                        Pin the places that matter and jump back with a single
+                        tap.
                     </Text>
                 </View>
 
@@ -513,6 +577,99 @@ export default function Index() {
                     </View>
                 </View>
             </Modal>
+
+            {/* Edit Pin Name Modal */}
+            <Modal
+                visible={isEditModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={handleCancelEditPin}
+            >
+                <View style={styles.modalOverlay}>
+                    <View
+                        style={[
+                            styles.modalContent,
+                            {
+                                backgroundColor: colors.card,
+                            },
+                        ]}
+                    >
+                        <Text
+                            style={[
+                                styles.modalTitle,
+                                { color: colors.textPrimary },
+                            ]}
+                        >
+                            Edit Location Name
+                        </Text>
+                        <Text
+                            style={[
+                                styles.modalSubtitle,
+                                { color: colors.textSecondary },
+                            ]}
+                        >
+                            Update the name for this saved location
+                        </Text>
+
+                        <View style={styles.inputContainer}>
+                            <TextInput
+                                style={[
+                                    styles.nameInput,
+                                    {
+                                        backgroundColor: isDark
+                                            ? "#1F2937"
+                                            : "#F9FAFB",
+                                        color: colors.textPrimary,
+                                        borderColor: isDark
+                                            ? "#374151"
+                                            : "#E5E7EB",
+                                    },
+                                ]}
+                                placeholder="Location Name"
+                                placeholderTextColor={colors.textSecondary}
+                                value={editPinName}
+                                onChangeText={setEditPinName}
+                                autoFocus={true}
+                            />
+                        </View>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.cancelButton,
+                                    {
+                                        borderColor: isDark
+                                            ? "#374151"
+                                            : "#E5E7EB",
+                                    },
+                                ]}
+                                onPress={handleCancelEditPin}
+                            >
+                                <Text
+                                    style={[
+                                        styles.cancelButtonText,
+                                        { color: colors.textPrimary },
+                                    ]}
+                                >
+                                    Cancel
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.confirmButton,
+                                ]}
+                                onPress={handleConfirmEditPin}
+                            >
+                                <Text style={styles.confirmButtonText}>
+                                    Save
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
         </SafeAreaView>
     );
 }
@@ -529,16 +686,44 @@ const styles = StyleSheet.create({
         paddingBottom: 16,
     },
     header: {
-        marginBottom: 16,
+        marginBottom: 20,
     },
     title: {
-        fontSize: 32,
+        fontSize: 34,
         fontWeight: "800",
         letterSpacing: -0.5,
     },
+    headerTopRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    appLabel: {
+        fontSize: 11,
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: 1.2,
+        marginBottom: 4,
+    },
+    headerBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: "#EEF2FF",
+        gap: 4,
+    },
+    headerBadgeText: {
+        fontSize: 11,
+        fontWeight: "600",
+        color: "#1D4ED8",
+    },
     subtitle: {
-        marginTop: 8,
-        fontSize: 14,
+        marginTop: 10,
+        fontSize: 13,
+        lineHeight: 18,
     },
     locationCard: {
         borderRadius: 24,
