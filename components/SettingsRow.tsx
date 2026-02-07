@@ -5,6 +5,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 type SettingsRowProps = {
   icon: React.ComponentProps<typeof Ionicons>["name"];
   label: string;
+  subtitle?: string;
   onPress?: () => void;
   showChevron?: boolean;
   isDark?: boolean;
@@ -13,6 +14,7 @@ type SettingsRowProps = {
 export function SettingsRow({
   icon,
   label,
+  subtitle,
   onPress,
   showChevron = true,
   isDark = false,
@@ -27,14 +29,26 @@ export function SettingsRow({
         <View style={styles.iconWrapper}>
           <Ionicons name={icon} size={20} color="#007AFF" />
         </View>
-        <Text
-          style={[
-            styles.rowLabel,
-            { color: isDark ? "#F9FAFB" : "#0F172A" },
-          ]}
-        >
-          {label}
-        </Text>
+        <View style={styles.textColumn}>
+          <Text
+            style={[
+              styles.rowLabel,
+              { color: isDark ? "#F9FAFB" : "#0F172A" },
+            ]}
+          >
+            {label}
+          </Text>
+          {subtitle ? (
+            <Text
+              style={[
+                styles.rowSubtitle,
+                { color: isDark ? "#6B7280" : "#9CA3AF" },
+              ]}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
       </View>
       {showChevron && (
         <MaterialCommunityIcons
@@ -59,6 +73,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+  },
+  textColumn: {
+    flexDirection: "column",
+  },
+  rowSubtitle: {
+    fontSize: 12,
+    marginTop: 2,
   },
   iconWrapper: {
     height: 36,

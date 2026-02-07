@@ -18,7 +18,9 @@ import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import { PinnitItem } from "@/types/pinnit";
 import { getLocationName } from "@/utils/geocoding";
 import { formatTimeAgo } from "@/utils/format";
-import { loadPins, savePins } from "@/utils/storage";
+import { loadMapStyle } from "@/utils/storage";
+import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
+import { useNetworkStatus } from "@/utils/network";
 
 const FALLBACK_REGION: Region = {
   latitude: 13.7563,
@@ -58,8 +60,12 @@ export default function MapScreen() {
     longitude: number;
   } | null>(null);
   const [allPins, setAllPins] = useState<PinnitItem[]>([]);
+  const [mapType, setMapType] = useState<
+    "standard" | "satellite" | "hybrid" | "terrain"
+  >("standard");
 
   const isDark = colorScheme === "dark";
+  const isOnline = useNetworkStatus();
   const backgroundColor = useMemo(
     () => (isDark ? "#020617" : "#F8FAFC"),
     [isDark]
@@ -118,7 +124,8 @@ export default function MapScreen() {
       // Reload pins when screen is focused
       const loadAllPins = async () => {
         try {
-          const pins = await loadPins();
+          if (isOnline) await runPendingSync();
+          const pins = await loadPins(isOnline);
           setAllPins(pins);
         } catch (error) {
           console.error("Error loading pins:", error);
@@ -149,7 +156,7 @@ export default function MapScreen() {
         // If no params, clear selected location
         setSelectedLocation(null);
       }
-    }, [params.latitude, params.longitude, params.name, params.timestamp, isMapReady, animateToSelectedLocation])
+    }, [params.latitude, params.longitude, params.name, params.timestamp, isMapReady, animateToSelectedLocation, isOnline])
   );
 
   // Re-animate when map becomes ready and we have a selected location
@@ -197,7 +204,7 @@ export default function MapScreen() {
       setPinName(locationName);
     } catch (error) {
       console.error("Error fetching location name:", error);
-      setPinName("Location Name");
+      setPinName("ชื่อตำแหน่ง");
     } finally {
       setIsLoadingPinName(false);
     }
@@ -213,10 +220,10 @@ export default function MapScreen() {
   const handleConfirmPin = async () => {
     if (!pinLocation) return;
 
-    const finalName = pinName.trim() || "Location Name";
+    const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
     try {
-      const existingPins = await loadPins();
+      const existingPins = await loadPins(isOnline);
       const timestamp = Date.now();
       const newPin: PinnitItem = {
         id: `pin_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
@@ -228,16 +235,16 @@ export default function MapScreen() {
       };
 
       const updatedPins = [newPin, ...existingPins];
-      await savePins(updatedPins);
+      await savePins(updatedPins, isOnline);
       setAllPins(updatedPins); // Update all pins state
 
       setShowPinModal(false);
       setPinName("");
       setPinLocation(null);
-      Alert.alert("Success", "Location pinned successfully!");
+      Alert.alert("สำเร็จ", "ปักหมุดตำแหน่งเรียบร้อยแล้ว!");
     } catch (error) {
       console.error("Error pinning location:", error);
-      Alert.alert("Error", "Failed to pin location. Please try again.");
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถปักหมุดตำแหน่งได้ กรุณาลองอีกครั้ง");
     }
   };
 
@@ -276,32 +283,51 @@ export default function MapScreen() {
     }
   };
 
-  // Load all pins when component mounts and when screen is focused
+  // Load all pins and map style when component mounts
   useEffect(() => {
     const loadAllPins = async () => {
       try {
-        const pins = await loadPins();
+        const pins = await loadPins(isOnline);
         setAllPins(pins);
       } catch (error) {
         console.error("Error loading pins:", error);
       }
     };
+    const loadMapStylePref = async () => {
+      try {
+        const style = await loadMapStyle();
+        setMapType(style);
+      } catch (error) {
+        console.error("Error loading map style:", error);
+      }
+    };
     loadAllPins();
-  }, []);
+    loadMapStylePref();
+  }, [isOnline]);
 
-  // Reload pins when screen is focused (to show newly added pins from other screens)
+  // Reload pins and map style when screen is focused (e.g. returning from settings)
   useFocusEffect(
     useCallback(() => {
       const loadAllPins = async () => {
         try {
-          const pins = await loadPins();
+          if (isOnline) await runPendingSync();
+          const pins = await loadPins(isOnline);
           setAllPins(pins);
         } catch (error) {
           console.error("Error loading pins:", error);
         }
       };
+      const loadMapStylePref = async () => {
+        try {
+          const style = await loadMapStyle();
+          setMapType(style);
+        } catch (error) {
+          console.error("Error loading map style:", error);
+        }
+      };
       loadAllPins();
-    }, [])
+      loadMapStylePref();
+    }, [isOnline])
   );
 
   useEffect(() => {
@@ -444,6 +470,7 @@ export default function MapScreen() {
             ref={mapRef}
             style={styles.map}
             initialRegion={region}
+            mapType={mapType}
             onRegionChangeComplete={setRegion}
             onMapReady={handleMapReady}
             onPress={handleMapPress}
@@ -474,7 +501,7 @@ export default function MapScreen() {
                   latitude: selectedLocation.latitude,
                   longitude: selectedLocation.longitude,
                 }}
-                title={selectedLocation.name || "Selected Location"}
+                title={selectedLocation.name || "ตำแหน่งที่เลือก"}
                 description={`${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`}
                 tappable={true}
                 pinColor="#007AFF" // Different color for selected location
@@ -497,7 +524,7 @@ export default function MapScreen() {
                 style={{ marginRight: 6 }}
               />
               <Text style={styles.locationPillText} numberOfLines={1}>
-                {selectedLocation.name || "Selected Location"}
+                {selectedLocation.name || "ตำแหน่งที่เลือก"}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -591,7 +618,7 @@ export default function MapScreen() {
                   { color: isDark ? "#F9FAFB" : "#020617" },
                 ]}
               >
-                Pin Location
+                ปักหมุดตำแหน่ง
               </Text>
               <Text
                 style={[
@@ -599,7 +626,7 @@ export default function MapScreen() {
                   { color: isDark ? "#9CA3AF" : "#6B7280" },
                 ]}
               >
-                Enter a name for this location
+                กรอกชื่อตำแหน่งนี้
               </Text>
 
               <View style={styles.inputContainer}>
@@ -613,7 +640,7 @@ export default function MapScreen() {
                         { marginLeft: 8 },
                       ]}
                     >
-                      Getting location name...
+                      กำลังดึงชื่อตำแหน่ง...
                     </Text>
                   </View>
                 ) : (
@@ -626,7 +653,7 @@ export default function MapScreen() {
                         borderColor: isDark ? "#374151" : "#E5E7EB",
                       },
                     ]}
-                    placeholder="Location Name"
+                    placeholder="ชื่อตำแหน่ง"
                     placeholderTextColor={isDark ? "#6B7280" : "#9CA3AF"}
                     value={pinName}
                     onChangeText={setPinName}
@@ -652,7 +679,7 @@ export default function MapScreen() {
                       { color: isDark ? "#F9FAFB" : "#020617" },
                     ]}
                   >
-                    Cancel
+                    ยกเลิก
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -660,7 +687,7 @@ export default function MapScreen() {
                   onPress={handleConfirmPin}
                   disabled={isLoadingPinName}
                 >
-                  <Text style={styles.confirmButtonText}>Pin</Text>
+                  <Text style={styles.confirmButtonText}>ปักหมุด</Text>
                 </TouchableOpacity>
               </View>
             </View>

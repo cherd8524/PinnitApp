@@ -14,12 +14,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
 import { PinnitItem } from "@/types/pinnit";
 import { getLocationName } from "@/utils/geocoding";
 import { formatTimeAgo } from "@/utils/format";
-import { loadPins, savePins } from "@/utils/storage";
+import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
+import { useNetworkStatus } from "@/utils/network";
 import { PinItem } from "@/components/PinItem";
 
 export default function Index() {
@@ -40,6 +40,7 @@ export default function Index() {
     const [editPinName, setEditPinName] = useState("");
 
     const isDark = colorScheme === "dark";
+    const isOnline = useNetworkStatus();
 
     const colors = useMemo(
         () => ({
@@ -54,25 +55,26 @@ export default function Index() {
     // Load pins on mount
     useEffect(() => {
         (async () => {
-            const loadedPins = await loadPins();
+            const loadedPins = await loadPins(isOnline);
             setPins(loadedPins);
             setIsLoadingPins(false);
         })();
-    }, []);
+    }, [isOnline]);
 
-    // Reload pins when screen is focused (to show newly added pins from Map screen)
+    // Reload pins when screen is focused; run pending sync when back online
     useFocusEffect(
         useCallback(() => {
             const loadAllPins = async () => {
                 try {
-                    const loadedPins = await loadPins();
+                    if (isOnline) await runPendingSync();
+                    const loadedPins = await loadPins(isOnline);
                     setPins(loadedPins);
                 } catch (error) {
                     console.error("Error loading pins:", error);
                 }
             };
             loadAllPins();
-        }, [])
+        }, [isOnline])
     );
 
     useEffect(() => {
@@ -142,7 +144,7 @@ export default function Index() {
             setPinName(locationName);
         } catch (error) {
             console.error("Error fetching location name:", error);
-            setPinName("Location Name");
+            setPinName("ชื่อตำแหน่ง");
         } finally {
             setIsLoadingPinName(false);
         }
@@ -151,7 +153,7 @@ export default function Index() {
     const handleConfirmPin = async () => {
         if (!currentLocation) return;
 
-        const finalName = pinName.trim() || "Location Name";
+        const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
         try {
             const timestamp = Date.now();
@@ -165,15 +167,15 @@ export default function Index() {
             };
 
             const updatedPins = [newPin, ...pins];
-            await savePins(updatedPins);
+            await savePins(updatedPins, isOnline);
             setPins(updatedPins);
 
             setShowPinModal(false);
             setPinName("");
-            Alert.alert("Success", "Location pinned successfully!");
+            Alert.alert("สำเร็จ", "ปักหมุดตำแหน่งเรียบร้อยแล้ว!");
         } catch (error) {
             console.error("Error pinning location:", error);
-            Alert.alert("Error", "Failed to pin location. Please try again.");
+            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถปักหมุดตำแหน่งได้ กรุณาลองอีกครั้ง");
         }
     };
 
@@ -184,28 +186,28 @@ export default function Index() {
 
     const handleDeletePin = async (pinId: string) => {
         Alert.alert(
-            "Delete Location",
-            "Are you sure you want to delete this location?",
+            "ลบตำแหน่ง",
+            "คุณแน่ใจหรือไม่ว่าต้องการลบตำแหน่งนี้?",
             [
                 {
-                    text: "Cancel",
+                    text: "ยกเลิก",
                     style: "cancel",
                 },
                 {
-                    text: "Delete",
+                    text: "ลบ",
                     style: "destructive",
                     onPress: async () => {
                         try {
                             const updatedPins = pins.filter(
                                 (pin) => pin.id !== pinId
                             );
-                            await savePins(updatedPins);
+                            await savePins(updatedPins, isOnline);
                             setPins(updatedPins);
                         } catch (error) {
                             console.error("Error deleting pin:", error);
                             Alert.alert(
-                                "Error",
-                                "Failed to delete location. Please try again."
+                                "เกิดข้อผิดพลาด",
+                                "ไม่สามารถลบตำแหน่งได้ กรุณาลองอีกครั้ง"
                             );
                         }
                     },
@@ -231,7 +233,7 @@ export default function Index() {
 
         const finalName = editPinName.trim();
         if (!finalName) {
-            Alert.alert("Invalid name", "Please enter a name for this location.");
+            Alert.alert("ชื่อไม่ถูกต้อง", "กรุณากรอกชื่อตำแหน่งนี้");
             return;
         }
 
@@ -239,14 +241,14 @@ export default function Index() {
             const updatedPins = pins.map((pin) =>
                 pin.id === editingPin.id ? { ...pin, name: finalName } : pin
             );
-            await savePins(updatedPins);
+            await savePins(updatedPins, isOnline);
             setPins(updatedPins);
             handleCancelEditPin();
         } catch (error) {
             console.error("Error updating pin name:", error);
             Alert.alert(
-                "Error",
-                "Failed to update location name. Please try again."
+                "เกิดข้อผิดพลาด",
+                "ไม่สามารถอัปเดตชื่อตำแหน่งได้ กรุณาลองอีกครั้ง"
             );
         }
     };
@@ -289,7 +291,7 @@ export default function Index() {
                                     { color: colors.textSecondary },
                                 ]}
                             >
-                                Your personal pinboard
+                                กระดานปักหมุดส่วนตัวของคุณ
                             </Text>
                             <Text
                                 style={[
@@ -307,7 +309,7 @@ export default function Index() {
                                 color="#1D4ED8"
                             />
                             <Text style={styles.headerBadgeText}>
-                                Saved spots
+                                จุดที่บันทึก
                             </Text>
                         </View>
                     </View>
@@ -318,8 +320,7 @@ export default function Index() {
                             { color: colors.textSecondary },
                         ]}
                     >
-                        Pin the places that matter and jump back with a single
-                        tap.
+                        ปักหมุดสถานที่สำคัญ แล้วกลับมาดูได้ด้วยการแตะเพียงครั้งเดียว
                     </Text>
                 </View>
 
@@ -358,7 +359,7 @@ export default function Index() {
                                             { marginLeft: 8 },
                                         ]}
                                     >
-                                        Getting location...
+                                        กำลังดึงตำแหน่ง...
                                     </Text>
                                 </View>
                             ) : currentLocation ? (
@@ -379,7 +380,7 @@ export default function Index() {
                                         { color: colors.textSecondary },
                                     ]}
                                 >
-                                    Location unavailable
+                                    ไม่สามารถดึงตำแหน่งได้
                                 </Text>
                             )}
                         </View>
@@ -401,7 +402,7 @@ export default function Index() {
                             color="#ffffff"
                         />
                         <Text style={styles.pinButtonLabel}>
-                            Pin Current Spot
+                            ปักหมุดตำแหน่งปัจจุบัน
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -415,7 +416,7 @@ export default function Index() {
                                 { color: colors.textPrimary },
                             ]}
                         >
-                            Saved Spots
+                            จุดที่บันทึก
                         </Text>
                         <Text
                             style={[
@@ -423,7 +424,7 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            {pins.length} location{pins.length !== 1 ? "s" : ""}
+                            {pins.length} ตำแหน่ง
                         </Text>
                     </View>
 
@@ -444,7 +445,7 @@ export default function Index() {
                                     { color: colors.textSecondary },
                                 ]}
                             >
-                                No pinned locations yet
+                                ยังไม่มีตำแหน่งที่ปักหมุด
                             </Text>
                             <Text
                                 style={[
@@ -452,7 +453,7 @@ export default function Index() {
                                     { color: colors.textSecondary },
                                 ]}
                             >
-                                Pin your current location to get started
+                                ปักหมุดตำแหน่งปัจจุบันเพื่อเริ่มต้น
                             </Text>
                         </View>
                     ) : (
@@ -489,7 +490,7 @@ export default function Index() {
                                 { color: colors.textPrimary },
                             ]}
                         >
-                            Pin Location
+                            ปักหมุดตำแหน่ง
                         </Text>
                         <Text
                             style={[
@@ -497,7 +498,7 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            Enter a name for this location
+                            กรอกชื่อตำแหน่งนี้
                         </Text>
 
                         <View style={styles.inputContainer}>
@@ -513,7 +514,7 @@ export default function Index() {
                                             { color: colors.textSecondary },
                                         ]}
                                     >
-                                        Getting location name...
+                                        กำลังดึงชื่อตำแหน่ง...
                                     </Text>
                                 </View>
                             ) : (
@@ -530,7 +531,7 @@ export default function Index() {
                                                 : "#E5E7EB",
                                         },
                                     ]}
-                                    placeholder="Location Name"
+                                    placeholder="ชื่อตำแหน่ง"
                                     placeholderTextColor={colors.textSecondary}
                                     value={pinName}
                                     onChangeText={setPinName}
@@ -558,7 +559,7 @@ export default function Index() {
                                         { color: colors.textPrimary },
                                     ]}
                                 >
-                                    Cancel
+                                    ยกเลิก
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -570,7 +571,7 @@ export default function Index() {
                                 disabled={isLoadingPinName}
                             >
                                 <Text style={styles.confirmButtonText}>
-                                    Pin
+                                    ปักหมุด
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -600,7 +601,7 @@ export default function Index() {
                                 { color: colors.textPrimary },
                             ]}
                         >
-                            Edit Location Name
+                            แก้ไขชื่อตำแหน่ง
                         </Text>
                         <Text
                             style={[
@@ -608,7 +609,7 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            Update the name for this saved location
+                            อัปเดตชื่อตำแหน่งที่บันทึก
                         </Text>
 
                         <View style={styles.inputContainer}>
@@ -625,7 +626,7 @@ export default function Index() {
                                             : "#E5E7EB",
                                     },
                                 ]}
-                                placeholder="Location Name"
+                                placeholder="ชื่อตำแหน่ง"
                                 placeholderTextColor={colors.textSecondary}
                                 value={editPinName}
                                 onChangeText={setEditPinName}
@@ -652,7 +653,7 @@ export default function Index() {
                                         { color: colors.textPrimary },
                                     ]}
                                 >
-                                    Cancel
+                                    ยกเลิก
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -663,7 +664,7 @@ export default function Index() {
                                 onPress={handleConfirmEditPin}
                             >
                                 <Text style={styles.confirmButtonText}>
-                                    Save
+                                    บันทึก
                                 </Text>
                             </TouchableOpacity>
                         </View>

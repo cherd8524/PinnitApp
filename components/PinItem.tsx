@@ -141,6 +141,14 @@ export function PinItem({
             >
               {item.name}
             </Text>
+            {item.ownerLabel ? (
+              <Text
+                style={[styles.pinOwner, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
+                เจ้าของ: {item.ownerLabel}
+              </Text>
+            ) : null}
             <Text style={styles.pinCoord} numberOfLines={1}>
               {item.latitude.toFixed(4)}°, {item.longitude.toFixed(4)}°
             </Text>
@@ -156,7 +164,7 @@ export function PinItem({
             onPress={() => onViewMap(item)}
           >
             <Ionicons name="map-outline" size={16} color="#007AFF" />
-            <Text style={styles.viewMapLabel}>View Map</Text>
+            <Text style={styles.viewMapLabel}>ดูแผนที่</Text>
           </TouchableOpacity>
         </Pressable>
       </Animated.View>
@@ -210,6 +218,10 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     marginBottom: 4,
+  },
+  pinOwner: {
+    fontSize: 12,
+    marginBottom: 2,
   },
   pinCoord: {
     fontSize: 13,
