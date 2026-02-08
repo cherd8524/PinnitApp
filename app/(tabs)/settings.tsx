@@ -253,22 +253,20 @@ export default function SettingsScreen() {
                 <Ionicons name="chevron-forward" size={22} color={colors.sectionLabel} />
               </TouchableOpacity>
             ) : (
-              <View style={styles.accountBlock}>
-                <View style={styles.accountRow}>
-                  <View style={styles.accountRowLeft}>
-                    <View style={styles.avatarPlaceholder}>
-                      <Text style={styles.avatarInitial}>
-                        {displayName.charAt(0).toUpperCase()}
-                      </Text>
-                    </View>
-                    <View>
-                      <Text style={[styles.accountName, { color: colors.textPrimary }]}>
-                        {displayName}
-                      </Text>
-                      <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
-                        {session.user?.user_metadata?.username ?? session.user?.email?.split("@")[0] ?? "ล็อกอินแล้ว"}
-                      </Text>
-                    </View>
+              <View style={styles.accountRow}>
+                <View style={styles.accountRowLeft}>
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarInitial}>
+                      {displayName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={[styles.accountName, { color: colors.textPrimary }]}>
+                      {displayName}
+                    </Text>
+                    <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
+                      {session.user?.user_metadata?.username ?? session.user?.email?.split("@")[0] ?? "ล็อกอินแล้ว"}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -628,15 +626,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
-  accountBlock: {
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-  },
   accountRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 4,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   accountRowLeft: {
     flexDirection: "row",
