@@ -62,7 +62,24 @@ export default function Index() {
         })();
     }, [isOnline]);
 
-    // Reload pins when screen is focused; run pending sync when back online
+    // เมื่อกลับมาออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้น database อัตโนมัติ แล้วโหลดใหม่
+    useEffect(() => {
+        if (!isOnline) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                await runPendingSync();
+                if (cancelled) return;
+                const loadedPins = await loadPins(true);
+                setPins(loadedPins);
+            } catch (error) {
+                console.error("Error running pending sync:", error);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isOnline]);
+
+    // Reload pins when screen is focused
     useFocusEffect(
         useCallback(() => {
             const loadAllPins = async () => {

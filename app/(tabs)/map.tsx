@@ -118,6 +118,23 @@ export default function MapScreen() {
     }
   }, [params.latitude, params.longitude, params.name, params.timestamp, isMapReady, animateToSelectedLocation]);
 
+  // เมื่อกลับมาออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้น database อัตโนมัติ แล้วโหลดใหม่
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await runPendingSync();
+        if (cancelled) return;
+        const pins = await loadPins(true);
+        setAllPins(pins);
+      } catch (error) {
+        console.error("Error running pending sync:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOnline]);
+
   // Use focus effect to ensure animation when screen is focused and params exist
   // Also reload pins when screen is focused (to show newly added pins from other screens)
   useFocusEffect(

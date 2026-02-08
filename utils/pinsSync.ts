@@ -25,7 +25,12 @@ function mergeAndDedupePins(supabasePins: PinnitItem[], localPins: PinnitItem[])
   return sortPins(result);
 }
 
-/** Load pins: from Supabase when online + session, else from cache/AsyncStorage */
+/**
+ * Load pins:
+ * - ไม่ล็อกอิน: โหลดจาก storage เท่านั้น (ข้อมูลไม่มีเจ้าของ)
+ * - ล็อกอิน: โหลดจาก database เท่านั้น (หรือ cache เมื่อออฟไลน์) — ไม่รวมกับ storage
+ * Storage กับ database แยกกัน ไม่ merge เว้นแต่ user กดโอนข้อมูลเอง
+ */
 export async function loadPins(
   isOnline: boolean
 ): Promise<PinnitItem[]> {
@@ -41,15 +46,11 @@ export async function loadPins(
     }
     return [];
   }
-  const getLocalCachePins = async (): Promise<PinnitItem[]> => {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    try {
-      return JSON.parse(raw) as PinnitItem[];
-    } catch {
-      return [];
-    }
-  };
+
+  const ownerName =
+    session.user.user_metadata?.full_name ||
+    session.user.user_metadata?.username ||
+    "บัญชีของฉัน";
 
   if (isOnline) {
     try {
@@ -59,11 +60,7 @@ export async function loadPins(
         .eq("user_id", session.user.id)
         .order("timestamp", { ascending: false });
       if (error) throw error;
-      const ownerName =
-        session.user.user_metadata?.full_name ||
-        session.user.user_metadata?.username ||
-        "บัญชีของฉัน";
-      const supabasePins: PinnitItem[] = (data ?? []).map((row) => ({
+      const pins: PinnitItem[] = (data ?? []).map((row) => ({
         id: row.id,
         name: row.name,
         latitude: row.latitude,
@@ -74,38 +71,20 @@ export async function loadPins(
         timestamp: Number(row.timestamp),
         ownerLabel: ownerName,
       }));
-      const rawLocal = await getLocalCachePins();
-      const localPins: PinnitItem[] = rawLocal.map((p) => ({
-        ...p,
-        ownerLabel: p.ownerLabel ?? "รายการในเครื่อง",
-      }));
-      const merged = mergeAndDedupePins(supabasePins, localPins);
-      await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(merged));
+      await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(pins));
       await AsyncStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-      return merged;
+      return pins;
     } catch (e) {
       console.warn("loadPins from Supabase failed, using cache", e);
     }
   }
+
   const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
-  const supabasePins: PinnitItem[] = cache ? JSON.parse(cache) : [];
-  const rawLocal = await getLocalCachePins();
-  const ownerName =
-    session.user.user_metadata?.full_name ||
-    session.user.user_metadata?.username ||
-    "บัญชีของฉัน";
-  const localPins: PinnitItem[] = rawLocal.map((p) => ({
-    ...p,
-    ownerLabel: p.ownerLabel ?? "รายการในเครื่อง",
-  }));
-  const supabaseWithOwner: PinnitItem[] = supabasePins.map((p) => ({
+  const pins: PinnitItem[] = cache ? JSON.parse(cache) : [];
+  return pins.map((p) => ({
     ...p,
     ownerLabel: p.ownerLabel ?? ownerName,
   }));
-  if (supabaseWithOwner.length > 0 || localPins.length > 0) {
-    return mergeAndDedupePins(supabaseWithOwner, localPins);
-  }
-  return [];
 }
 
 /** Save pins: ล็อกอิน → ติดต่อ database (Supabase); ไม่ล็อกอิน → เก็บเฉพาะ storage (AsyncStorage) */
@@ -178,7 +157,7 @@ export async function getLastSyncAt(): Promise<number | null> {
   return s ? parseInt(s, 10) : null;
 }
 
-/** เรียกเมื่อ user เลือก "บันทึกลงเครื่องแล้วออก" ตอน logout: copy pins จาก cache ลง STORAGE_KEY เพื่อให้หลังออกจากระบบรายการยังแสดงในเครื่อง (cache = ข้อมูลผู้ยังไม่ล็อกอิน, Supabase = ข้อมูลผู้ล็อกอิน) */
+/** โอนข้อมูลจาก database ใส่ storage: copy รายการของ user (จาก cache/DB) ลง STORAGE_KEY — เรียกเมื่อ user กด "เก็บสำเนารายการลงเครื่อง" */
 export async function copyCacheToLocalOnLogout(): Promise<void> {
   const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
   if (cache) {
@@ -186,7 +165,7 @@ export async function copyCacheToLocalOnLogout(): Promise<void> {
   }
 }
 
-/** จำนวน pins ในเครื่องที่ยังไม่ได้ซิงค์ (ปักตอนยังไม่ล็อกอิน) — ใช้เมื่อมี session แล้วเพื่อแจ้ง user */
+/** จำนวน pins ใน storage (ข้อมูลไม่มีเจ้าของ) — ใช้เมื่อล็อกอินแล้ว เพื่อแจ้งว่ามีรายการใน storage ที่จะ "นำขึ้นบัญชี" ได้ */
 export async function getLocalOnlyPinsCount(): Promise<number> {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
   if (!raw) return 0;
@@ -198,7 +177,7 @@ export async function getLocalOnlyPinsCount(): Promise<number> {
   }
 }
 
-/** นำข้อมูลในเครื่อง (STORAGE_KEY) ขึ้น Supabase แล้วล้าง STORAGE_KEY — เรียกเมื่อ user กด sync และยืนยัน */
+/** นำข้อมูลใน storage (ไม่มีเจ้าของ) ขึ้น database (เป็นของ user) — เรียกเมื่อ user กด "นำขึ้นบัญชี" และยืนยัน */
 export async function mergeLocalPinsToSupabase(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return;
