@@ -21,6 +21,7 @@ import { formatTimeAgo } from "@/utils/format";
 import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
 import { PinItem } from "@/components/PinItem";
+import { supabase } from "@/lib/supabase";
 
 export default function Index() {
     const colorScheme = useColorScheme();
@@ -156,6 +157,11 @@ export default function Index() {
         const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const ownerLabel = session?.user
+                ? (session.user.user_metadata?.full_name ?? session.user.user_metadata?.username ?? "บัญชีของฉัน")
+                : "เครื่องนี้";
+
             const timestamp = Date.now();
             const newPin: PinnitItem = {
                 id: `pin_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
@@ -164,6 +170,7 @@ export default function Index() {
                 longitude: currentLocation.longitude,
                 createdAt: formatTimeAgo(timestamp),
                 timestamp: timestamp,
+                ownerLabel,
             };
 
             const updatedPins = [newPin, ...pins];
@@ -254,7 +261,7 @@ export default function Index() {
     };
 
     const handleViewMap = (item: PinnitItem) => {
-        router.push({
+        router.navigate({
             pathname: "/map",
             params: {
                 latitude: item.latitude.toString(),

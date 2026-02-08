@@ -146,7 +146,7 @@ export function PinItem({
                 style={[styles.pinOwner, { color: colors.textSecondary }]}
                 numberOfLines={1}
               >
-                เจ้าของ: {item.ownerLabel}
+                ปักหมุดโดย: {item.ownerLabel}
               </Text>
             ) : null}
             <Text style={styles.pinCoord} numberOfLines={1}>

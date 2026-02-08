@@ -141,7 +141,7 @@ export default function LoginScreen() {
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.link}
-            onPress={() => router.push("/(auth)/sign-up")}
+            onPress={() => router.navigate("/(auth)/sign-up")}
           >
             <Text style={[styles.linkText, { color: colors.textSecondary }]}>
               ยังไม่มีบัญชี? สมัครสมาชิก

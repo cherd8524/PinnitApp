@@ -21,6 +21,7 @@ import { formatTimeAgo } from "@/utils/format";
 import { loadMapStyle } from "@/utils/storage";
 import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
+import { supabase } from "@/lib/supabase";
 
 const FALLBACK_REGION: Region = {
   latitude: 13.7563,
@@ -223,6 +224,11 @@ export default function MapScreen() {
     const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
     try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const ownerLabel = session?.user
+        ? (session.user.user_metadata?.full_name ?? session.user.user_metadata?.username ?? "บัญชีของฉัน")
+        : "เครื่องนี้";
+
       const existingPins = await loadPins(isOnline);
       const timestamp = Date.now();
       const newPin: PinnitItem = {
@@ -232,6 +238,7 @@ export default function MapScreen() {
         longitude: pinLocation.longitude,
         createdAt: formatTimeAgo(timestamp),
         timestamp: timestamp,
+        ownerLabel,
       };
 
       const updatedPins = [newPin, ...existingPins];

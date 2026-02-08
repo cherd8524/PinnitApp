@@ -108,7 +108,7 @@ export async function loadPins(
   return [];
 }
 
-/** Save pins: เมื่อ login + online จะ sync ขึ้น Supabase ทันที (pin อัตโนมัติ); ไม่มี session เก็บในเครื่อง; offline เก็บ pending */
+/** Save pins: ล็อกอิน → ติดต่อ database (Supabase); ไม่ล็อกอิน → เก็บเฉพาะ storage (AsyncStorage) */
 export async function savePins(
   pins: PinnitItem[],
   isOnline: boolean
@@ -122,7 +122,6 @@ export async function savePins(
   await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(sorted));
   if (isOnline) {
     try {
-      // Login + online → sync ขึ้น Supabase ทันที
       await supabase.from("pins").delete().eq("user_id", session.user.id);
       if (sorted.length > 0) {
         const rows = sorted.map((p) => ({

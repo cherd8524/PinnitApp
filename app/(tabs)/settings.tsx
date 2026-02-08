@@ -41,6 +41,7 @@ export default function SettingsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyleType>("standard");
   const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+  const [showUserGuideModal, setShowUserGuideModal] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
@@ -235,7 +236,7 @@ export default function SettingsScreen() {
             {!session ? (
               <TouchableOpacity
                 style={styles.accountRow}
-                onPress={() => (router.push as (href: string) => void)("/(auth)/login")}
+                onPress={() => router.navigate("/(auth)/login")}
               >
                 <View style={styles.accountRowLeft}>
                   <View style={styles.avatarPlaceholder}>
@@ -423,6 +424,18 @@ export default function SettingsScreen() {
             ]}
           >
             <SettingsRow
+              icon="book-outline"
+              label="คู่มือการใช้งาน"
+              onPress={() => setShowUserGuideModal(true)}
+              isDark={isDark}
+            />
+            <View
+              style={[
+                styles.cardDivider,
+                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+              ]}
+            />
+            <SettingsRow
               icon="information-circle-outline"
               label="เกี่ยวกับ Pinnit"
               onPress={() => {
@@ -499,6 +512,76 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* User Guide Modal */}
+      <Modal
+        visible={showUserGuideModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUserGuideModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUserGuideModal(false)}
+        >
+          <TouchableOpacity
+            style={[
+              styles.userGuideModalContent,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            activeOpacity={1}
+            onPress={() => {}}
+          >
+            <Text style={[styles.mapStyleModalTitle, { color: colors.textPrimary }]}>
+              คู่มือการใช้งาน
+            </Text>
+            <ScrollView
+              style={styles.userGuideScroll}
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                แท็บหลัก
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • รายการ: แสดงรายการตำแหน่งที่ปักหมุด กด + เพื่อเพิ่มตำแหน่งปัจจุบัน กดที่รายการเพื่อดูบนแผนที่ กดค้างเพื่อแก้ไข ปัดซ้ายเพื่อลบ
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                แผนที่
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • แสดง markers ของตำแหน่งที่บันทึก กดที่แผนที่เพื่อปักหมุดใหม่ เลือกสไตล์แผนที่ได้จากเมนูตั้งค่า
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                บัญชีและซิงค์
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud เมื่อออฟไลน์ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
+                {"\n"}• กด "สำรองข้อมูลและซิงค์" เพื่อนำข้อมูลในเครื่องขึ้นบัญชี (กรณีมี pins ก่อนล็อกอิน)
+                {"\n"}• กด "เก็บสำเนารายการลงเครื่อง" ก่อนออกจากระบบ ถ้าต้องการให้ pins ยังเห็นได้หลัง logout
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                ตั้งค่า
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • สไตล์แผนที่: มาตรฐาน / ดาวเทียม / ไฮบริด / ภูมิประเทศ
+                {"\n"}• โหมดมืด: ปรับจอให้เหมาะกับเวลากลางคืน
+              </Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalCloseButton, { borderColor: colors.border }]}
+              onPress={() => setShowUserGuideModal(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: colors.sectionLabel }]}>
+                ปิด
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Map Style Selection Modal */}
       <Modal
@@ -723,6 +806,41 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 20,
     borderWidth: 1,
+  },
+  userGuideModalContent: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "80%",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+  },
+  userGuideScroll: {
+    maxHeight: 400,
+    marginVertical: 12,
+  },
+  userGuideSection: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  userGuideText: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  modalCloseButton: {
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  modalCloseText: {
+    fontSize: 15,
+    fontWeight: "500",
   },
   mapStyleModalTitle: {
     fontSize: 20,
