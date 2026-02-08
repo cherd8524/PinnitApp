@@ -23,7 +23,7 @@ import {
   type MapStyleType,
 } from "@/utils/storage";
 import { supabase } from "@/lib/supabase";
-import { loadPins, getLastSyncAt, runPendingSync, getLocalOnlyPinsCount, mergeLocalPinsToSupabase, copyCacheToLocalOnLogout } from "@/utils/pinsSync";
+import { getLastSyncAt, getLocalOnlyPinsCount, mergeLocalPinsToSupabase, copyCacheToLocalOnLogout } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
 
 const DARK_MODE_KEY = "@pinnit_dark_mode";
@@ -74,7 +74,7 @@ export default function SettingsScreen() {
 
   const handleBackupSync = async () => {
     if (!session) {
-      Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่อใช้ฟีเจอร์สำรองข้อมูลและซิงค์");
+      Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่อนำปักหมุดขึ้นบัญชี");
       return;
     }
     if (!isOnline) {
@@ -82,58 +82,32 @@ export default function SettingsScreen() {
       return;
     }
     if (localOnlyPinsCount > 0) {
-      Alert.alert(
-        "มีข้อมูลในเครื่องที่ยังไม่ได้ซิงค์",
-        `มีตำแหน่งในเครื่อง ${localOnlyPinsCount} จุด ที่ยังไม่ได้ซิงค์กับบัญชีนี้ ต้องการนำขึ้นบัญชีหรือไม่?\n\n(ถ้าไม่ใช่ข้อมูลของคุณ เช่น ยืมเครื่องเพื่อน ให้กดยกเลิก)`,
-        [
-          { text: "ยกเลิก", style: "cancel" },
-          {
-            text: "นำขึ้นบัญชี",
-            onPress: async () => {
-              setSyncLoading(true);
-              try {
-                await mergeLocalPinsToSupabase();
-                setLocalOnlyPinsCount(0);
-                const t = await getLastSyncAt();
-                setLastSyncAt(t);
-                Alert.alert("ซิงค์เรียบร้อย", "นำข้อมูลในเครื่องขึ้นบัญชีแล้ว");
-              } catch (e) {
-                console.error("Merge sync error", e);
-                Alert.alert("ซิงค์ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
-              } finally {
-                setSyncLoading(false);
-              }
-            },
-          },
-        ]
-      );
+      setSyncLoading(true);
+      try {
+        await mergeLocalPinsToSupabase();
+        setLocalOnlyPinsCount(0);
+        const t = await getLastSyncAt();
+        setLastSyncAt(t);
+        Alert.alert("สำเร็จ", "นำข้อมูลในเครื่องขึ้นบัญชีแล้ว");
+      } catch (e) {
+        console.error("Merge sync error", e);
+        Alert.alert("ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
+      } finally {
+        setSyncLoading(false);
+      }
       return;
     }
-    setSyncLoading(true);
-    try {
-      await runPendingSync();
-      await loadPins(true);
-      const t = await getLastSyncAt();
-      setLastSyncAt(t);
-      Alert.alert("ซิงค์เรียบร้อย", t ? `ซิงค์ล่าสุดเมื่อ ${new Date(t).toLocaleString("th-TH")}` : "ข้อมูลถูกซิงค์แล้ว");
-    } catch (e) {
-      console.error("Backup sync error", e);
-      Alert.alert("ซิงค์ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
-    } finally {
-      setSyncLoading(false);
-    }
+    Alert.alert("ไม่มีรายการที่ต้องนำขึ้นบัญชี", "ไม่มีข้อมูลในเครื่องที่ยังไม่อยู่ในบัญชี หรือเมื่อกลับออนไลน์หลังเน็ตหลุด ระบบจะนำปักหมุดที่ปักตอนออฟไลน์ขึ้นบัญชีให้อัตโนมัติ");
   };
 
   const backupSyncSubtitle =
     !session
-      ? "ล็อกอินเพื่อซิงค์"
+      ? "ล็อกอินเพื่อนำปักหมุดขึ้นบัญชี"
       : !isOnline
-        ? "ออฟไลน์"
+        ? "ออฟไลน์ — เมื่อกลับออนไลน์จะนำปักหมุดที่ปักตอนเน็ตหลุดขึ้นบัญชีอัตโนมัติ"
         : localOnlyPinsCount > 0
-          ? `มี ${localOnlyPinsCount} จุดในเครื่อง ยังไม่ได้ซิงค์ — กดเพื่อเลือกนำขึ้นบัญชีหรือไม่`
-          : lastSyncAt
-            ? `ซิงค์ล่าสุด ${new Date(lastSyncAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" })}`
-            : "กดเพื่อซิงค์ตอนนี้";
+          ? `มี ${localOnlyPinsCount} จุดในเครื่อง — กดเพื่อนำขึ้นบัญชี`
+          : "ไม่มีรายการในเครื่องที่ต้องนำขึ้นบัญชี";
 
   // Load saved preference on mount
   useEffect(() => {
@@ -378,7 +352,7 @@ export default function SettingsScreen() {
             >
               <SettingsRow
                 icon="cloud-done-outline"
-                label="สำรองข้อมูลและซิงค์"
+                label="นำปักหมุดขึ้นบัญชี"
                 subtitle={syncLoading ? "กำลังซิงค์..." : backupSyncSubtitle}
                 onPress={handleBackupSync}
                 isDark={isDark}
@@ -391,12 +365,12 @@ export default function SettingsScreen() {
               />
               <SettingsRow
                 icon="save-outline"
-                label="เก็บสำเนารายการลงเครื่อง"
-                subtitle="จะเห็นรายการหลังออกจากระบบ"
+                label="ดาวน์โหลดปักหมุดลงเครื่อง"
+                subtitle="ดึงปักหมุดจากบัญชีลงเครื่อง จะเห็นหลังออกจากระบบ"
                 onPress={async () => {
                   try {
                     await copyCacheToLocalOnLogout();
-                    Alert.alert("บันทึกแล้ว", "เก็บสำเนาลงเครื่องแล้ว");
+                    Alert.alert("บันทึกแล้ว", "ดาวน์โหลดปักหมุดลงเครื่องแล้ว");
                   } catch (e) {
                     console.error("Copy to local error", e);
                     Alert.alert("บันทึกไม่สำเร็จ", "กรุณาลองอีกครั้ง");
@@ -560,8 +534,8 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
                 • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud เมื่อออฟไลน์ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
-                {"\n"}• กด "สำรองข้อมูลและซิงค์" เพื่อนำข้อมูลในเครื่องขึ้นบัญชี (กรณีมี pins ก่อนล็อกอิน)
-                {"\n"}• กด "เก็บสำเนารายการลงเครื่อง" ก่อนออกจากระบบ ถ้าต้องการให้ pins ยังเห็นได้หลัง logout
+                {"\n"}• "นำปักหมุดขึ้นบัญชี" = อัปเดตปักหมุดในเครื่องใส่ในบัญชีผู้ใช้
+                {"\n"}• "ดาวน์โหลดปักหมุดลงเครื่อง" = ดึงปักหมุดจากบัญชีลงเครื่อง จะเห็นหลังออกจากระบบ
               </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
                 ตั้งค่า

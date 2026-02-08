@@ -149,7 +149,20 @@ export async function savePins(
   const freshOnly = (Array.isArray(freshStorage) ? freshStorage : []).filter(
     (p) => !userDedupeKeys.has(pinDedupeKey(p))
   );
-  const finalStoragePins = mergeAndDedupePins(storagePins, freshOnly);
+  let finalStoragePins = mergeAndDedupePins(storagePins, freshOnly);
+  if (finalStoragePins.length === 0) {
+    const safeguardRaw = await AsyncStorage.getItem(STORAGE_KEY);
+    if (safeguardRaw) {
+      try {
+        const existing = JSON.parse(safeguardRaw) as PinnitItem[];
+        if (Array.isArray(existing) && existing.length > 0) {
+          finalStoragePins = existing;
+        }
+      } catch {
+        /* ใช้ finalStoragePins เดิม (ว่าง) */
+      }
+    }
+  }
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(finalStoragePins));
 
   if (isOnline) {
@@ -210,7 +223,7 @@ export async function getLastSyncAt(): Promise<number | null> {
   return s ? parseInt(s, 10) : null;
 }
 
-/** โอนข้อมูลจาก database ใส่ storage: นำรายการของ user (จาก cache/DB) ไปเพิ่มใน STORAGE_KEY โดยไม่ทับของเดิม — เรียกเมื่อ user กด "เก็บสำเนารายการลงเครื่อง" */
+/** ดาวน์โหลดปักหมุดลงเครื่อง: นำรายการของ user (จาก cache/DB) ไปเพิ่มใน STORAGE_KEY โดยไม่ทับของเดิม — เรียกเมื่อ user กด "ดาวน์โหลดปักหมุดลงเครื่อง" */
 export async function copyCacheToLocalOnLogout(): Promise<void> {
   const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
   const existingPins: PinnitItem[] = existingRaw ? JSON.parse(existingRaw) : [];

@@ -329,12 +329,28 @@ export default function MapScreen() {
     loadMapStylePref();
   }, [isOnline]);
 
+  // เมื่อกลับออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้นบัญชีอัตโนมัติ
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await runPendingSync();
+        if (cancelled) return;
+        const pins = await loadPins(true);
+        setAllPins(pins);
+      } catch (error) {
+        console.error("Error running pending sync:", error);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOnline]);
+
   // Reload pins and map style when screen is focused (e.g. returning from settings)
   useFocusEffect(
     useCallback(() => {
       const loadAllPins = async () => {
         try {
-          if (isOnline) await runPendingSync();
           const pins = await loadPins(isOnline);
           setAllPins(pins);
         } catch (error) {

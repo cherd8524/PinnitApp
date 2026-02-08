@@ -84,7 +84,6 @@ export default function Index() {
         useCallback(() => {
             const loadAllPins = async () => {
                 try {
-                    if (isOnline) await runPendingSync();
                     const loadedPins = await loadPins(isOnline);
                     setPins(loadedPins);
                 } catch (error) {
