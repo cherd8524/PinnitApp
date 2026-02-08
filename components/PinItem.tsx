@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useCallback } from "react";
 import {
   View,
   Text,
@@ -103,21 +103,30 @@ export function PinItem({
         },
       });
     },
-    [item.id, widthAnim, fullWidth, swipedWidth, deleteButtonWidth, isSwiped, readOnly]
+    [item.id, widthAnim, fullWidth, swipedWidth, deleteButtonWidth, isSwiped]
   );
+
+  const closeSwipe = useCallback(() => {
+    if (!isSwiped) return;
+    setIsSwiped(false);
+    Animated.spring(widthAnim, {
+      toValue: fullWidth,
+      useNativeDriver: false,
+      tension: 50,
+      friction: 7,
+    }).start();
+  }, [isSwiped, widthAnim, fullWidth]);
 
   return (
     <View style={styles.swipeContainer}>
-      {!readOnly ? (
-        <View style={styles.deleteButtonContainer}>
-          <TouchableOpacity
-            style={styles.deleteButton}
-            onPress={() => onDelete(item.id)}
-          >
-            <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
-      ) : null}
+      <View style={styles.deleteButtonContainer}>
+        <TouchableOpacity
+          style={styles.deleteButton}
+          onPress={() => onDelete(item.id)}
+        >
+          <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
 
       <Animated.View
         style={[
@@ -125,16 +134,17 @@ export function PinItem({
           {
             backgroundColor: colors.card,
             shadowColor: "#0F172A",
-            width: readOnly ? fullWidth : widthAnim,
-            borderTopRightRadius: !readOnly && isSwiped ? 0 : 18,
-            borderBottomRightRadius: !readOnly && isSwiped ? 0 : 18,
-            borderRightWidth: !readOnly && isSwiped ? 0 : 1,
+            width: widthAnim,
+            borderTopRightRadius: isSwiped ? 0 : 18,
+            borderBottomRightRadius: isSwiped ? 0 : 18,
+            borderRightWidth: isSwiped ? 0 : 1,
           },
         ]}
-        {...(readOnly ? {} : panResponder.panHandlers)}
+        {...panResponder.panHandlers}
       >
         <Pressable
           style={styles.cardContent}
+          onPress={closeSwipe}
           onLongPress={() => (readOnly ? Alert.alert("ไม่สามารถแก้ไขได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถแก้ไขหรือลบได้") : onEdit(item))}
           delayLongPress={400}
         >
@@ -165,7 +175,10 @@ export function PinItem({
 
           <TouchableOpacity
             style={styles.viewMapButton}
-            onPress={() => onViewMap(item)}
+            onPress={() => {
+              closeSwipe();
+              onViewMap(item);
+            }}
           >
             <Ionicons name="map-outline" size={16} color="#007AFF" />
             <Text style={styles.viewMapLabel}>ดูแผนที่</Text>
