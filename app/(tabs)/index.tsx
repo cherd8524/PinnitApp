@@ -4,6 +4,8 @@ import {
     Alert,
     FlatList,
     Modal,
+    RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -40,6 +42,7 @@ export default function Index() {
     const [editingPin, setEditingPin] = useState<PinnitItem | null>(null);
     const [editPinName, setEditPinName] = useState("");
     const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
 
     const isDark = colorScheme === "dark";
     const isOnline = useNetworkStatus();
@@ -292,6 +295,20 @@ export default function Index() {
         }
     };
 
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            const { data: { session: s } } = await supabase.auth.getSession();
+            setSession(s);
+            const loadedPins = await loadPins(isOnline);
+            setPins(loadedPins);
+        } catch (error) {
+            console.error("Error refreshing pins:", error);
+        } finally {
+            setRefreshing(false);
+        }
+    }, [isOnline]);
+
     const handleViewMap = (item: PinnitItem) => {
         router.navigate({
             pathname: "/map",
@@ -473,7 +490,16 @@ export default function Index() {
                             <ActivityIndicator size="large" color="#007AFF" />
                         </View>
                     ) : pins.length === 0 ? (
-                        <View style={styles.emptyContainer}>
+                        <ScrollView
+                            style={styles.emptyScroll}
+                            contentContainerStyle={styles.emptyContainer}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                />
+                            }
+                        >
                             <Ionicons
                                 name="location-outline"
                                 size={48}
@@ -495,7 +521,16 @@ export default function Index() {
                             >
                                 ปักหมุดตำแหน่งปัจจุบันเพื่อเริ่มต้น
                             </Text>
-                        </View>
+                            <Text
+                                style={[
+                                    styles.emptySubtext,
+                                    { color: colors.textSecondary },
+                                    { marginTop: 16 },
+                                ]}
+                            >
+                                ลากลงเพื่อรีเฟรช
+                            </Text>
+                        </ScrollView>
                     ) : (
                         <FlatList
                             data={pins}
@@ -503,6 +538,12 @@ export default function Index() {
                             renderItem={renderItem}
                             contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                />
+                            }
                         />
                     )}
                 </View>
@@ -930,8 +971,11 @@ const styles = StyleSheet.create({
         alignItems: "center",
         paddingVertical: 40,
     },
-    emptyContainer: {
+    emptyScroll: {
         flex: 1,
+    },
+    emptyContainer: {
+        flexGrow: 1,
         justifyContent: "center",
         alignItems: "center",
         paddingVertical: 60,

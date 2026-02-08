@@ -120,14 +120,15 @@
 
 ### 6.2 ดาวน์โหลดปักหมุดลงเครื่อง (ปุ่ม "ดาวน์โหลดปักหมุดลงเครื่อง")
 
-- **หน้าที่:** นำข้อมูลจาก **database ของ user** เพิ่มลง **local storage**
+- **หน้าที่:** นำข้อมูลจาก **database ของ user** เพิ่มลง **local storage** — เมื่อดาวน์โหลดแล้ว **owner เปลี่ยนเป็นของตัวเครื่อง** (ownerLabel = "เครื่องนี้")
 - **ฟังก์ชัน:** `copyCacheToLocalOnLogout()`
 - Flow:
   1. อ่าน STORAGE_KEY → existingPins  
   2. อ่าน PINS_CACHE_KEY → cachePins  
-  3. merged = mergeAndDedupePins(cachePins, existingPins)  
-  4. เขียน STORAGE_KEY = merged  
-- **ผล:** รายการในบัญชีถูกเพิ่มลงเครื่อง (ไม่ทับของเดิมใน storage)
+  3. ตั้ง ownerLabel ของ cachePins เป็น "เครื่องนี้" (ของตัวเครื่อง)  
+  4. merged = mergeAndDedupePins(cachePins, existingPins)  
+  5. เขียน STORAGE_KEY = merged  
+- **ผล:** รายการในบัญชีถูกเพิ่มลงเครื่อง (ไม่ทับของเดิม) และถือว่าเป็นรายการในเครื่อง
 
 ### 6.3 เมื่อกลับออนไลน์หลังเน็ตหลุด (ล็อกอินค้างไว้)
 

@@ -85,7 +85,7 @@ export default function SettingsScreen() {
       await mergeLocalPinsToSupabase();
       const t = await getLastSyncAt();
       setLastSyncAt(t);
-      Alert.alert("สำเร็จ", "อัปโหลดปักหมุดขึ้นบัญชีแล้ว (ข้อมูลในเครื่องยังอยู่เหมือนเดิม)");
+      Alert.alert("สำเร็จ", "อัปโหลดปักหมุดขึ้นบัญชีแล้ว");
     } catch (e) {
       console.error("Merge sync error", e);
       Alert.alert("ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
@@ -96,10 +96,10 @@ export default function SettingsScreen() {
 
   const backupSyncSubtitle =
     !session
-      ? "ล็อกอินเพื่ออัปโหลดปักหมุดขึ้นบัญชี"
+      ? "ล็อกอินก่อนจึงจะนำรายการในเครื่องไปเก็บในบัญชีได้"
       : !isOnline
-        ? "ออฟไลน์ — เมื่อกลับออนไลน์จะนำปักหมุดที่ปักตอนเน็ตหลุดขึ้นบัญชีอัตโนมัติ"
-        : "อัปโหลดปักหมุดในเครื่องขึ้นบัญชี";
+        ? "ไม่มีเน็ต — รายการที่ปักตอนเน็ตหลุดจะขึ้นบัญชีอัตโนมัติเมื่อกลับออนไลน์"
+        : "นำรายการในเครื่องไปเก็บในบัญชี";
 
   // Load saved preference on mount
   useEffect(() => {
@@ -345,7 +345,7 @@ export default function SettingsScreen() {
               <SettingsRow
                 icon="cloud-done-outline"
                 label="อัปโหลดปักหมุดขึ้นบัญชี"
-                subtitle={syncLoading ? "กำลังซิงค์..." : backupSyncSubtitle}
+                subtitle={syncLoading ? "กำลังอัปโหลด..." : backupSyncSubtitle}
                 onPress={handleBackupSync}
                 isDark={isDark}
               />
@@ -358,7 +358,7 @@ export default function SettingsScreen() {
               <SettingsRow
                 icon="save-outline"
                 label="ดาวน์โหลดปักหมุดลงเครื่อง"
-                subtitle="ดึงปักหมุดจากบัญชีลงเครื่อง จะเห็นหลังออกจากระบบ"
+                subtitle="เก็บสำเนารายการในบัญชีไว้ในเครื่อง"
                 onPress={async () => {
                   try {
                     await copyCacheToLocalOnLogout();

@@ -195,13 +195,16 @@ export async function getLastSyncAt(): Promise<number | null> {
   return s ? parseInt(s, 10) : null;
 }
 
-/** ดาวน์โหลดปักหมุดลงเครื่อง: นำรายการของ user (จาก cache/DB) ไปเพิ่มใน STORAGE_KEY โดยไม่ทับของเดิม — เรียกเมื่อ user กด "ดาวน์โหลดปักหมุดลงเครื่อง" */
+/** ดาวน์โหลดปักหมุดลงเครื่อง: นำรายการของ user (จาก cache/DB) ไปเพิ่มใน STORAGE_KEY โดยไม่ทับของเดิม — owner เปลี่ยนเป็นของตัวเครื่อง; เรียกเมื่อ user กด "ดาวน์โหลดปักหมุดลงเครื่อง" */
 export async function copyCacheToLocalOnLogout(): Promise<void> {
   const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
   const existingPins: PinnitItem[] = existingRaw ? JSON.parse(existingRaw) : [];
   const cacheRaw = await AsyncStorage.getItem(PINS_CACHE_KEY);
   if (!cacheRaw) return;
-  const cachePins: PinnitItem[] = JSON.parse(cacheRaw);
+  const cachePins: PinnitItem[] = (JSON.parse(cacheRaw) as PinnitItem[]).map((p) => ({
+    ...p,
+    ownerLabel: "เครื่องนี้",
+  }));
   const merged = mergeAndDedupePins(cachePins, existingPins);
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
 }
