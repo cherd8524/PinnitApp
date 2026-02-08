@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Appearance,
-  Image,
   Modal,
   ScrollView,
   StyleSheet,
@@ -23,8 +22,6 @@ import {
   saveMapStyle,
   type MapStyleType,
 } from "@/utils/storage";
-import * as ImagePicker from "expo-image-picker";
-import * as ImageManipulator from "expo-image-manipulator";
 import { supabase } from "@/lib/supabase";
 import { loadPins, getLastSyncAt, runPendingSync, getLocalOnlyPinsCount, mergeLocalPinsToSupabase, copyCacheToLocalOnLogout } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
@@ -64,7 +61,6 @@ export default function SettingsScreen() {
   };
 
   const displayName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.username ?? "ผู้ใช้";
-  const avatarUrl = session?.user?.user_metadata?.avatar_url as string | undefined;
 
   useEffect(() => {
     getLastSyncAt().then(setLastSyncAt);
@@ -201,37 +197,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleAvatarPress = async () => {
-    if (!session?.user) return;
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images"],
-        allowsEditing: true,
-        aspect: [1, 1],
-      });
-      if (result.canceled || !result.assets[0]) return;
-      const uri = result.assets[0].uri;
-      const manipulated = await ImageManipulator.manipulateAsync(uri, [{ resize: { width: 400 } }], { compress: 0.8 });
-      const path = `${session.user.id}/avatar`;
-      const res = await fetch(manipulated.uri);
-      const body = await res.blob();
-      const { error: uploadErr } = await supabase.storage.from("profile-images").upload(path, body, { upsert: true });
-      if (uploadErr) throw uploadErr;
-      const { data: urlData } = supabase.storage.from("profile-images").getPublicUrl(path);
-      await supabase.auth.updateUser({ data: { avatar_url: urlData.publicUrl } });
-      setSession({ ...session, user: { ...session.user, user_metadata: { ...session.user.user_metadata, avatar_url: urlData.publicUrl } } } as Session);
-    } catch (e) {
-      console.error("Avatar upload error", e);
-      const msg =
-        e instanceof Error && (e.message?.includes("expo-image-picker") || e.message?.includes("expo-image-manipulator") || (e as { code?: string }).code === "MODULE_NOT_FOUND")
-          ? "กรุณาติดตั้งแพ็กเกจ: npx expo install expo-image-picker expo-image-manipulator แล้ว build ใหม่ (npx expo prebuild)"
-          : e instanceof Error
-            ? e.message
-            : "อัปโหลดไม่สำเร็จ กรุณาลองอีกครั้ง";
-      Alert.alert("อัปโหลดไม่สำเร็จ", msg);
-    }
-  };
-
   return (
     <SafeAreaView
       style={[styles.safeArea, { backgroundColor: colors.background }]}
@@ -291,15 +256,11 @@ export default function SettingsScreen() {
               <View style={styles.accountBlock}>
                 <View style={styles.accountRow}>
                   <View style={styles.accountRowLeft}>
-                    <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.8}>
-                      {avatarUrl ? (
-                        <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
-                      ) : (
-                        <View style={styles.avatarPlaceholder}>
-                          <Ionicons name="image-outline" size={28} color={colors.sectionLabel} />
-                        </View>
-                      )}
-                    </TouchableOpacity>
+                    <View style={styles.avatarPlaceholder}>
+                      <Text style={styles.avatarInitial}>
+                        {displayName.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
                     <View>
                       <Text style={[styles.accountName, { color: colors.textPrimary }]}>
                         {displayName}
@@ -486,7 +447,7 @@ export default function SettingsScreen() {
               onPress={() => {
                 Alert.alert(
                   "นโยบายความเป็นส่วนตัว",
-                  "• ข้อมูลที่เก็บ: ตำแหน่งที่ปักหมุด ชื่อบัญชี รูปโปรไฟล์ (ถ้าอัปโหลด) เก็บในอุปกรณ์และบนเซิร์ฟเวอร์เมื่อคุณล็อกอิน\n\n" +
+                  "• ข้อมูลที่เก็บ: ตำแหน่งที่ปักหมุด ชื่อบัญชี เก็บในอุปกรณ์และบนเซิร์ฟเวอร์เมื่อคุณล็อกอิน\n\n" +
                   "• การใช้ข้อมูล: ใช้เพื่อให้บริการแอป ซิงค์และสำรอง pins ของคุณ ไม่ขายหรือแชร์ข้อมูลให้บุคคลที่สาม\n\n" +
                   "• ความปลอดภัย: การเชื่อมต่อใช้ HTTPS ข้อมูลบัญชีอยู่ภายใต้ Supabase Auth\n\n" +
                   "• การตั้งค่า (โหมดมืด, สไตล์แผนที่): เก็บเฉพาะในอุปกรณ์ ไม่ส่งขึ้นเซิร์ฟเวอร์"
@@ -689,11 +650,6 @@ const styles = StyleSheet.create({
     backgroundColor: "#DBEAFE",
     alignItems: "center",
     justifyContent: "center",
-  },
-  avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
   },
   avatarInitial: {
     fontSize: 22,
