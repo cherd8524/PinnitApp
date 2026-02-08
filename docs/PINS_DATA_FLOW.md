@@ -1,236 +1,149 @@
-# Flow การแสดงข้อมูลและจัดการข้อมูล Pins (Local Storage vs บัญชีผู้ใช้)
+# Flow การดำเนินการกับข้อมูลปักหมุด (ฝั่ง Local vs ฝั่ง Database)
 
-เอกสารนี้อธิบายการแสดงผลข้อมูลปักหมุดจาก **local storage** และจาก **บัญชีผู้ใช้ (user)** รวมถึงการสร้าง / ลบ / แก้ไข ในทุกเหตุการณ์
+เอกสารนี้อธิบายการแบ่งข้อมูลปักหมุดเป็น **สองฝั่ง** — **ฝั่ง local** (กรณีไม่ได้ login) และ **ฝั่ง database** (กรณี login) — การดำเนินการกับข้อมูลจะไม่เกี่ยวข้องกัน เว้นแต่กรณีพิเศษ (ปุ่มอัปโหลดขึ้นบัญชี / ดาวน์โหลดลงเครื่อง)
 
 ---
 
-## 1. แหล่งข้อมูลและ Key ใน AsyncStorage
+## การนิยาม
+
+- **รายการในเครื่อง** = ข้อมูลที่เกิดจากการกระทำใน local (ไม่ได้ login) และข้อมูลที่ user ดาวน์โหลดลงเครื่อง (ปุ่ม "ดาวน์โหลดปักหมุดลงเครื่อง") — ทั้งสองส่วนเก็บใน local storage (`STORAGE_KEY`) และเมื่อ login จะแสดงในรายการแบบอ่านอย่างเดียว (ลบ/แก้ไขไม่ได้)
+
+---
+
+## 1. สรุปแนวคิด: สองฝั่ง
+
+| ฝั่ง | เมื่อไหร่ | แหล่งข้อมูล | การดำเนินการ (แสดง/เพิ่ม/ลบ/แก้ไข) |
+|------|-----------|-------------|-------------------------------------|
+| **Local** | ไม่ได้ login | เฉพาะ **local storage** (`STORAGE_KEY`) | ทำกับ local storage เท่านั้น |
+| **Database** | Login แล้ว | **Supabase (pins)** + cache (`PINS_CACHE_KEY`) | ทำกับ database เท่านั้น |
+
+- **การแสดงผลเมื่อ login:** แสดงทั้ง pins จาก **local storage** และจาก **database** (รวมกันในรายการ) แต่รายการจาก local storage **ไม่สามารถลบหรือแก้ไขได้** — เป็นแบบอ่านอย่างเดียว
+- **กรณีพิเศษ:** มีสองปุ่มเท่านั้นที่เชื่อมระหว่างสองฝั่ง  
+  - **อัปโหลดปักหมุดขึ้นบัญชี:** ข้อมูลจาก local storage → สร้างใน database ของ user — **อัปโหลดแล้วข้อมูลใน local ยังอยู่เหมือนเดิม**  
+  - **ดาวน์โหลดปักหมุดลงเครื่อง:** ข้อมูลจาก database ของ user → เพิ่มใน local storage
+
+---
+
+## 2. แหล่งข้อมูลและ Key
 
 | Key | ความหมาย | เก็บอะไร |
 |-----|-----------|----------|
-| **STORAGE_KEY** (จาก `.env`) | ข้อมูลในเครื่อง (ไม่มีเจ้าของ) | Pins ที่ปักตอนไม่ล็อกอิน หรือที่ดาวน์โหลดจากบัญชีลงเครื่อง |
-| **PINS_CACHE_KEY** (`@pinnit_pins_cache`) | Cache ของบัญชีผู้ใช้ | Pins ของ user ที่ล็อกอินอยู่ (ซิงค์กับ Supabase) |
-| **LAST_SYNC_KEY** | เวลาซิงค์ล่าสุด | ใช้แสดงใน Settings |
-| **PENDING_SYNC_KEY** | มีการรอซิงค์หรือไม่ | ตั้งเมื่อบันทึกไม่ขึ้น DB ได้ (ออฟไลน์) |
-
-- **Local storage** = ข้อมูลที่อยู่ใต้ `STORAGE_KEY` เท่านั้น  
-- **ของ user** = ข้อมูลใน Supabase ตาราง `pins` (และ cache ใน `PINS_CACHE_KEY`)
+| **STORAGE_KEY** (จาก `.env`) | ฝั่ง local | รายการในเครื่อง (ปักตอนไม่ login + ที่ user ดาวน์โหลดลงเครื่อง) |
+| **PINS_CACHE_KEY** (`@pinnit_pins_cache`) | Cache ฝั่ง database | Pins ของ user (ซิงค์กับ Supabase) |
+| **LAST_SYNC_KEY** | เวลาซิงค์ล่าสุด | (ใช้แสดงใน Settings) |
+| **PENDING_SYNC_KEY** | รอซิงค์เมื่อกลับออนไลน์ | ตั้งเมื่อบันทึกลง DB ไม่ได้ (ออฟไลน์) |
 
 ---
 
-## 2. การแสดงข้อมูล (Load / โหลดรายการ)
+## 3. Flow ฝั่ง Local (กรณีไม่ได้ login)
 
-### 2.1 ฟังก์ชันหลัก: `loadPins(isOnline)`
+### 3.1 การแสดงปักหมุด
 
-- เรียกจาก: หน้าหลัก (index), หน้าแผนที่ (map), หลัง sync ใน Settings  
-- ส่ง `isOnline` เพื่อตัดสินใจดึงจาก DB หรือใช้ cache
+- เรียก `loadPins(isOnline)` → อ่าน **STORAGE_KEY** เท่านั้น → เรียงตาม timestamp → return
+- แสดงเฉพาะ pins ในเครื่อง
 
-### 2.2 Flow ตามสถานะ
+### 3.2 การเพิ่ม / ลบ / แก้ไข
 
-#### กรณี **ไม่ล็อกอิน**
+- **เพิ่ม:** สร้าง pin ใหม่ (ownerLabel = "เครื่องนี้") → เรียก `savePins(pins, isOnline)` → เขียนทับ **STORAGE_KEY**
+- **ลบ:** ลบออกจาก list → เรียก `savePins(pins, isOnline)` → เขียนทับ **STORAGE_KEY**
+- **แก้ไข:** แก้ชื่อใน list → เรียก `savePins(pins, isOnline)` → เขียนทับ **STORAGE_KEY**
 
-1. อ่าน `STORAGE_KEY` เท่านั้น
-2. แปลงเป็น array ของ pins แล้วใส่ `ownerLabel: "เครื่องนี้"` ถ้ายังไม่มี
-3. เรียงตาม `timestamp` (ใหม่ก่อน) แล้ว return  
-→ **แสดงเฉพาะ pins ในเครื่อง (local storage)**
-
-#### กรณี **ล็อกอิน**
-
-1. อ่าน `STORAGE_KEY` → ได้ **storagePins** (ใส่ `ownerLabel: "รายการในเครื่อง"` สำหรับ merge)
-2. ดึงข้อมูลของ user:
-   - **ออนไลน์:** query Supabase `pins` ที่ `user_id = session.user.id` → ได้ **dbPins** แล้วเขียนลง `PINS_CACHE_KEY` และอัปเดต `LAST_SYNC_KEY`
-   - **ออฟไลน์:** อ่านจาก `PINS_CACHE_KEY` → ได้ **dbPins**
-3. ใส่ `ownerLabel` ให้ dbPins (ชื่อ user / "บัญชีของฉัน")
-4. **รวมและตัดซ้ำ:** `mergeAndDedupePins(dbPins, storagePins)`
-   - ใช้ key ตัดซ้ำ: `latitude` (ปัด 6 ตำแหน่ง) + `longitude` (ปัด 6 ตำแหน่ง) + `timestamp`
-   - ถ้ารายการเดียวกันมีทั้งใน DB และใน storage ให้ **เหลือแค่รายการจาก DB** (ใส่ DB ก่อนในอาร์กิวเมนต์)
-5. เรียงตาม `timestamp` แล้ว return  
-→ **แสดงทั้ง pins ของบัญชีและ pins ในเครื่อง โดยไม่ซ้ำรายการ**
+→ ทุกการดำเนินการทำกับ **local storage เท่านั้น**
 
 ---
 
-## 3. การสร้าง Pin (Create)
+## 4. Flow ฝั่ง Database (กรณี login)
 
-### 3.1 จุดที่สร้าง
+### 4.1 การแสดงปักหมุด
 
-- **หน้าหลัก (index):** กดปักหมุดตำแหน่งปัจจุบัน → `handleConfirmPin`
-- **หน้าแผนที่ (map):** กดบนแผนที่เลือกตำแหน่ง → ยืนยันชื่อ → บันทึก
+- เรียก `loadPins(isOnline)`:
+  - ใช้ข้อมูลจาก **database ของ user เป็นหลัก** (ดึงจาก Supabase หรือจาก cache ถ้าออฟไลน์) → dbPins
+  - อ่าน **STORAGE_KEY** → storagePins (ใส่ ownerLabel "รายการในเครื่อง")
+  - รวมและตัดซ้ำ: `mergeAndDedupePins(dbPins, storagePins)` — **ถ้าซ้ำกันทั้ง local และ database ให้เอาข้อมูลจาก database**
+  - return รายการรวม
+- **ผล:** แสดงทั้ง pins ของบัญชีและ pins ในเครื่องในรายการเดียว (ของ DB เป็นหลัก ถ้าซ้ำใช้ของ DB) แต่รายการจาก local storage **ไม่สามารถลบหรือแก้ไขได้** (ปุ่มลบ/แก้ไขถูกซ่อน หรือกดแล้วแจ้งเตือน)
 
-### 3.2 การกำหนดเจ้าของ (ownerLabel)
+### 4.2 การเพิ่ม / ลบ / แก้ไข (ทำกับ database เท่านั้น)
 
-- **ไม่ล็อกอิน:** `ownerLabel = "เครื่องนี้"`
-- **ล็อกอิน:** `ownerLabel = full_name หรือ username หรือ "บัญชีของฉัน"`
+- **เพิ่ม:** สร้าง pin ใหม่ (ownerLabel = ชื่อ user) → เรียก `savePins(pins, isOnline)` → เขียนเฉพาะ **PINS_CACHE_KEY** และ **Supabase** — **ไม่แตะ STORAGE_KEY**
+- **ลบ:** ลบเฉพาะ pin ของบัญชีออกจาก list (ถ้าเป็น pin จาก local จะไม่ให้ลบ) → เรียก `savePins(pins, isOnline)` → อัปเดตเฉพาะ cache + DB
+- **แก้ไข:** แก้ชื่อเฉพาะ pin ของบัญชี (ถ้าเป็น pin จาก local จะไม่ให้แก้) → เรียก `savePins(pins, isOnline)` → อัปเดตเฉพาะ cache + DB
 
-→ Pin ใหม่จะถูกมองว่าเป็นของ **storage** หรือของ **user** ตาม `ownerLabel` ตอน save
+→ **การดำเนินการกับข้อมูลเมื่อ login ทำกับ database (และ cache) เท่านั้น ไม่กระทบ local storage**
 
-### 3.3 Flow หลังสร้าง
+### 4.3 การแยกรายการในเครื่อง (read-only)
 
-1. สร้าง object `newPin` (id, name, lat, lng, timestamp, ownerLabel)
-2. รวมกับรายการที่โหลดมา: `updatedPins = [newPin, ...pins]`
-3. เรียก **`savePins(updatedPins, isOnline)`**
-
-(รายละเอียดการบันทึกของ `savePins` อยู่ที่หัวข้อ 5)
-
----
-
-## 4. การลบ Pin (Delete)
-
-### 4.1 จุดที่ลบ
-
-- **หน้าหลัก:** กดลบที่รายการ → ยืนยัน → `handleDeletePin`
-- **หน้าแผนที่:** (ถ้ามีการลบจากแผนที่ ก็จะ filter ออกจาก list แล้วเรียก savePins)
-
-### 4.2 Flow
-
-1. Filter ออกจาก list: `updatedPins = pins.filter((pin) => pin.id !== pinId)`
-2. เรียก **`savePins(updatedPins, isOnline)`**
-
-→ การลบ = บันทึก list ที่เหลือ; การแยกว่าเป็นของ user หรือของ storage เกิดขึ้นใน `savePins` ตาม `ownerLabel` และการ merge กับ storage เดิม (ดูหัวข้อ 5)
+- ใช้ `isStoragePin(p)` ตรวจจาก `ownerLabel`: ถ้าเป็น "เครื่องนี้" หรือ "รายการในเครื่อง" ถือว่าเป็นรายการในเครื่อง
+- ใน UI (เช่น PinItem): ส่ง `readOnly={true}` ให้รายการที่ `isStoragePin(item)` เมื่อ login → ไม่แสดงปุ่มลบ (swipe) และกด long press แจ้ง "ไม่สามารถแก้ไขหรือลบรายการในเครื่องได้เมื่อล็อกอินอยู่"
 
 ---
 
-## 5. การแก้ไข Pin (Edit)
+## 5. การบันทึก (savePins) ตามฝั่ง
 
-### 5.1 จุดที่แก้ไข
+### 5.1 ไม่ล็อกอิน
 
-- **หน้าหลัก:** กดแก้ไขชื่อ → เปลี่ยนชื่อ → ยืนยัน → `handleConfirmEditPin`
+1. เรียง `pins` ตาม timestamp  
+2. เขียนทับ **STORAGE_KEY** ด้วย list ที่ส่งมา  
 
-### 5.2 Flow
+→ เก็บเฉพาะในเครื่อง
 
-1. แทนที่ชื่อใน list: `updatedPins = pins.map(... pin.name = editPinName ...)`
-2. เรียก **`savePins(updatedPins, isOnline)`**
+### 5.2 ล็อกอิน
 
-→ โครงสร้างและ `ownerLabel` ไม่เปลี่ยน แค่ชื่อเปลี่ยน; การเขียนลง storage / cache / DB ใช้ logic เดียวกับหัวข้อ 5 (savePins)
+1. แยก **userPins** = รายการที่ `!isStoragePin(p)` (ของบัญชีเท่านั้น)  
+2. เขียน **PINS_CACHE_KEY** = userPins  
+3. ถ้าออนไลน์: ลบ pins ของ user ใน DB แล้ว insert userPins ขึ้น Supabase; อัปเดต LAST_SYNC_KEY, ลบ PENDING_SYNC_KEY  
+4. ถ้าออฟไลน์: ตั้ง PENDING_SYNC_KEY  
 
----
-
-## 6. การบันทึก (Save) — ฟังก์ชัน `savePins(pins, isOnline)`
-
-ใช้ทั้งตอน **สร้าง / ลบ / แก้ไข** รายการ
-
-### 6.1 ไม่ล็อกอิน
-
-1. เรียง `pins` ตาม timestamp
-2. เขียนทับ `STORAGE_KEY` ด้วย `JSON.stringify(sorted)`  
-→ **เก็บเฉพาะในเครื่อง**
-
-### 6.2 ล็อกอิน
-
-1. แยกตามเจ้าของ:
-   - **userPins** = รายการที่ `ownerLabel` ไม่ใช่ "เครื่องนี้" หรือ "รายการในเครื่อง"
-   - **storageFromList** = รายการที่ถือว่าเป็นของ storage (ไม่มีเจ้าของ)
-2. อ่าน `STORAGE_KEY` เดิม → **existingStorage**
-3. **existingOnly** = รายการใน existingStorage ที่ dedupe key ไม่ซ้ำกับ userPins (ป้องกันลบของในเครื่องเมื่อลบแค่ของ user)
-4. **storagePins** = รวมและตัดซ้ำระหว่าง `storageFromList` กับ `existingOnly`
-5. เขียน **PINS_CACHE_KEY** = `userPins`
-6. อ่าน **STORAGE_KEY อีกครั้ง** (fresh) → **freshOnly** = รายการที่ key ไม่ซ้ำ userPins
-7. **finalStoragePins** = รวมและตัดซ้ำระหว่าง `storagePins` กับ `freshOnly`
-8. **Safeguard:** ถ้า `finalStoragePins.length === 0` ให้อ่าน STORAGE_KEY อีกครั้ง ถ้ามีข้อมูลอยู่ไม่ให้เขียนทับเป็น `[]` (ป้องกันข้อมูลในเครื่องหายเมื่อลบทุกรายการในหน้ารายการ)
-9. เขียน **STORAGE_KEY** = `finalStoragePins`
-10. **ออนไลน์:** ลบ pins ของ user ใน DB แล้ว insert `userPins` ขึ้น Supabase; อัปเดต LAST_SYNC_KEY และลบ PENDING_SYNC_KEY  
-    **ออฟไลน์:** ตั้ง PENDING_SYNC_KEY เพื่อให้กลับออนไลน์แล้ว sync ทีหลัง
-
-→ **ของ user ไปที่ DB + cache, ของเครื่องไปที่ STORAGE_KEY โดยไม่ลบของในเครื่องที่ไม่ได้อยู่ใน list (เช่น รายการที่ถูก dedupe เป็นของ user)**
+→ **ไม่อ่านหรือเขียน STORAGE_KEY เลย** — local storage ไม่ถูกแก้ไขโดยการเพิ่ม/ลบ/แก้ไขตอน login
 
 ---
 
-## 7. เหตุการณ์พิเศษ
+## 6. กรณีพิเศษ
 
-### 7.1 นำปักหมุดขึ้นบัญชี (ปุ่ม "นำปักหมุดขึ้นบัญชี")
+### 6.1 อัปโหลดปักหมุดขึ้นบัญชี (ปุ่ม "อัปโหลดปักหมุดขึ้นบัญชี")
 
-- **หน้าที่:** นำข้อมูลจาก **local storage** เพิ่มใส่ **บัญชีผู้ใช้** ที่ล็อกอินอยู่
+- **หน้าที่:** นำข้อมูลจาก **local storage** ไปสร้างใน **database ของ user**
 - **ฟังก์ชัน:** `mergeLocalPinsToSupabase()`
+- Flow:
+  1. อ่าน STORAGE_KEY → localPins  
+  2. ดึง pins ของ user จาก Supabase → existing  
+  3. merged = mergeAndDedupePins(existing, localPins)  
+  4. ลบ pins ของ user ใน DB แล้ว insert merged  
+  5. อัปเดต PINS_CACHE_KEY = merged, LAST_SYNC_KEY  
+- **อัปโหลดแล้วข้อมูลใน local ยังอยู่เหมือนเดิม** (ไม่ลบหรือแก้ STORAGE_KEY)
+- ปุ่มไม่แสดงจำนวนจุด — กดแล้วถ้าไม่มีข้อมูลในเครื่องจะแจ้ง "ไม่มีรายการที่ต้องนำขึ้นบัญชี"
 
-Flow:
+### 6.2 ดาวน์โหลดปักหมุดลงเครื่อง (ปุ่ม "ดาวน์โหลดปักหมุดลงเครื่อง")
 
-1. อ่าน `STORAGE_KEY` → **localPins**
-2. ถ้า localPins ว่าง → ออกจากฟังก์ชัน
-3. ดึง pins ของ user จาก Supabase → **existing**
-4. **merged** = `mergeAndDedupePins(existing, localPins)` (ตัดซ้ำ, DB ก่อน)
-5. ลบ pins ของ user ใน DB แล้ว insert ทุกรายการใน **merged**
-6. อัปเดต **PINS_CACHE_KEY** = merged, **LAST_SYNC_KEY**, ลบ **PENDING_SYNC_KEY**
-7. **ไม่ลบหรือเคลียร์ STORAGE_KEY** (ข้อมูลในเครื่องยังอยู่)
-
-→ ผล: รายการในเครื่องไปอยู่บนบัญชีด้วย โดยไม่ลบออกจากเครื่อง
-
----
-
-### 7.2 ดาวน์โหลดปักหมุดลงเครื่อง (ปุ่ม "ดาวน์โหลดปักหมุดลงเครื่อง")
-
-- **หน้าที่:** นำข้อมูลของ **user** เพิ่มลง **local storage**
+- **หน้าที่:** นำข้อมูลจาก **database ของ user** เพิ่มลง **local storage**
 - **ฟังก์ชัน:** `copyCacheToLocalOnLogout()`
+- Flow:
+  1. อ่าน STORAGE_KEY → existingPins  
+  2. อ่าน PINS_CACHE_KEY → cachePins  
+  3. merged = mergeAndDedupePins(cachePins, existingPins)  
+  4. เขียน STORAGE_KEY = merged  
+- **ผล:** รายการในบัญชีถูกเพิ่มลงเครื่อง (ไม่ทับของเดิมใน storage)
 
-Flow:
+### 6.3 เมื่อกลับออนไลน์หลังเน็ตหลุด (ล็อกอินค้างไว้)
 
-1. อ่าน **STORAGE_KEY** → **existingPins**
-2. อ่าน **PINS_CACHE_KEY** → **cachePins** (ของ user)
-3. ถ้า cache ว่าง → ออกจากฟังก์ชัน
-4. **merged** = `mergeAndDedupePins(cachePins, existingPins)` (cache ก่อน เพื่อไม่ทับของเดิม)
-5. เขียน **STORAGE_KEY** = merged
-
-→ ผล: รายการในบัญชีถูกเพิ่มลงเครื่อง โดยไม่ทับหรือเคลียร์ของเดิมใน STORAGE_KEY
-
----
-
-### 7.3 การซิงค์เฉพาะเมื่อกลับออนไลน์ (runPendingSync)
-
-- **นโยบาย:** ไม่มีการซิงค์เมื่อกดปุ่ม (ยกเลิกการซิงค์ทั่วไป) เว้นแต่กรณีเดียว: **ล็อกอินค้างไว้ แล้วเน็ตหลุด เมื่อกลับออนไลน์** ระบบจะนำปักหมุดที่ปักตอนเน็ตหลุดขึ้นบัญชีอัตโนมัติ
 - **ฟังก์ชัน:** `runPendingSync()`
-- **เรียกเมื่อ:** เฉพาะเมื่อ `isOnline` เปลี่ยนเป็น true (กลับออนไลน์) ในหน้าหลัก (index) และหน้าแผนที่ (map) — ไม่เรียกเมื่อกดปุ่ม "นำปักหมุดขึ้นบัญชี" หรือเมื่อแค่โฟกัสหน้าจอ
-
-Flow:
-
-1. ถ้าไม่มี session หรือไม่มี PENDING_SYNC_KEY → return false
-2. อ่าน **PINS_CACHE_KEY** → pins
-3. ลบ pins ของ user ใน DB แล้ว insert pins จาก cache ขึ้น Supabase
-4. อัปเดต LAST_SYNC_KEY, ลบ PENDING_SYNC_KEY
-5. return true
-
-→ ผล: อัปโหลด cache ขึ้น DB (ปักหมุดที่ปักตอนออฟไลน์ขึ้นบัญชี)
+- เรียกเมื่อ `isOnline` กลายเป็น true (ในหน้าหลักและหน้าแผนที่)
+- นำ pins ที่ปักตอนออฟไลน์ (ที่อยู่ใน cache) ขึ้น database อัตโนมัติ
 
 ---
 
-### 7.4 Logout
+## 7. สรุปตารางเหตุการณ์
 
-- ไม่มีการเคลียร์ **STORAGE_KEY** หรือ **PINS_CACHE_KEY** โดยอัตโนมัติ
-- ถ้าต้องการให้ pins ของ user ยังเห็นหลัง logout ต้องกด **"ดาวน์โหลดปักหมุดลงเครื่อง"** ก่อนออกจากระบบ
-
----
-
-## 8. การนับ "รายการในเครื่องที่ยังไม่อยู่ในบัญชี"
-
-- **ฟังก์ชัน:** `getLocalOnlyPinsCount()`
-- ใช้แสดงใน Settings ที่ปุ่ม "นำปักหมุดขึ้นบัญชี"
-
-Logic:
-
-- **ไม่ล็อกอิน:** return จำนวนทั้งหมดใน `STORAGE_KEY`
-- **ล็อกอิน:** นับเฉพาะรายการใน `STORAGE_KEY` ที่ **dedupe key ไม่ตรงกับ** รายการใน `PINS_CACHE_KEY`  
-→ ไม่นับสำเนาที่เคยดาวน์โหลดจากบัญชีลงเครื่องแล้ว
+| เหตุการณ์ | ฝั่ง Local (ไม่ login) | ฝั่ง Database (login) |
+|-----------|-------------------------|-------------------------|
+| **แสดง** | โหลดจาก STORAGE_KEY เท่านั้น | ใช้ข้อมูลจาก DB เป็นหลัก + merge กับ local; ถ้าซ้ำใช้ของ DB (รายการในเครื่องเป็น read-only) |
+| **เพิ่ม** | เขียน STORAGE_KEY | เขียน PINS_CACHE_KEY + DB เท่านั้น ไม่แตะ STORAGE_KEY |
+| **ลบ** | เขียน STORAGE_KEY | ลบได้เฉพาะ pin ของบัญชี → อัปเดต cache + DB |
+| **แก้ไข** | เขียน STORAGE_KEY | แก้ได้เฉพาะ pin ของบัญชี → อัปเดต cache + DB |
+| **อัปโหลดขึ้นบัญชี** | — | อ่าน STORAGE_KEY → สร้างใน DB (ข้อมูลในเครื่องยังอยู่เหมือนเดิม) |
+| **ดาวน์โหลดลงเครื่อง** | — | อ่าน cache → เพิ่มใน STORAGE_KEY |
+| **กลับออนไลน์** | — | runPendingSync() → อัปโหลด cache ขึ้น DB |
 
 ---
 
-## 9. สรุปตารางเหตุการณ์
-
-| เหตุการณ์ | ไม่ล็อกอิน | ล็อกอิน |
-|-----------|------------|--------|
-| **แสดงรายการ** | โหลดจาก STORAGE_KEY เท่านั้น | โหลด DB (หรือ cache) + STORAGE_KEY แล้ว merge ตัดซ้ำ (DB ก่อน) |
-| **สร้าง pin** | ใส่ ownerLabel "เครื่องนี้" → savePins → เขียนเฉพาะ STORAGE_KEY | ใส่ ownerLabel ชื่อ user → savePins → แยกเป็น userPins + storage; user ไป DB+cache, storage ไป STORAGE_KEY (รวมกับของเดิม + safeguard) |
-| **ลบ pin** | savePins(list ที่เหลือ) → เขียนทับ STORAGE_KEY | savePins(list ที่เหลือ) → แยก user/storage; เขียน cache + STORAGE_KEY (รวม existing, ไม่ลบของในเครื่องที่ซ่อนด้วย dedupe); ออนไลน์ก็อัปเดต DB |
-| **แก้ไขชื่อ pin** | savePins(list ที่แก้แล้ว) → เขียนทับ STORAGE_KEY | savePins(list ที่แก้แล้ว) → logic เดียวกับลบ (แยก user/storage, merge กับ storage เดิม, เขียน cache + STORAGE_KEY + DB ถ้าออนไลน์) |
-| **นำปักหมุดขึ้นบัญชี** | — | อ่าน STORAGE_KEY + DB → merge ตัดซ้ำ → เขียนกลับขึ้น DB + อัปเดต cache; ไม่เคลียร์ STORAGE_KEY |
-| **ดาวน์โหลดปักหมุดลงเครื่อง** | — | อ่าน cache + STORAGE_KEY → merge ตัดซ้ำ → เขียนกลับ STORAGE_KEY (เพิ่มของบัญชีลงเครื่อง) |
-| **กลับออนไลน์** | — | เรียก runPendingSync เมื่อ isOnline กลายเป็น true (ถ้ามี PENDING_SYNC_KEY) → นำปักหมุดที่ปักตอนเน็ตหลุดขึ้นบัญชีอัตโนมัติ |
-
----
-
-## 10. หมายเหตุสำคัญ
-
-- **Dedupe key:** `latitude` (ปัด 6 ตำแหน่ง) + `longitude` (ปัด 6 ตำแหน่ง) + `timestamp`  
-  ใช้ทั้งตอนแสดงผล (merge DB + storage) และตอนนับ "รายการในเครื่องที่ยังไม่อยู่บัญชี"
-- **ownerLabel** กำหนดว่า pin อยู่ในกลุ่ม "ของ user" หรือ "ของ storage" ตอน save; ค่าเช่น "เครื่องนี้", "รายการในเครื่อง" = storage.
-- **Safeguard ใน savePins:** เมื่อล็อกอินและ list ที่จะเขียนเป็น storage ว่าง จะไม่เขียนทับ STORAGE_KEY เป็น `[]` ถ้าอ่านล่าสุดแล้วยังมีข้อมูลอยู่ (ป้องกันข้อมูลในเครื่องหายเมื่อลบทุกรายการในหน้ารายการ)
-
----
-
-*อ้างอิงจาก `utils/pinsSync.ts`, `app/(tabs)/index.tsx`, `app/(tabs)/map.tsx`, `app/(tabs)/settings.tsx`*
+*อ้างอิงจาก `utils/pinsSync.ts`, `app/(tabs)/index.tsx`, `app/(tabs)/map.tsx`, `app/(tabs)/settings.tsx`, `components/PinItem.tsx`*

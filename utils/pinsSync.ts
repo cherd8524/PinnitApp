@@ -48,9 +48,9 @@ async function getStoragePins(): Promise<PinnitItem[]> {
 }
 
 /**
- * Load pins: แสดงข้อมูลใน storage เสมอ (ทั้งล็อกอินและไม่ล็อกอิน)
- * - ไม่ล็อกอิน: โหลดจาก storage เท่านั้น
- * - ล็อกอิน: โหลดจาก database (หรือ cache) แล้วรวมกับ storage เพื่อแสดงทั้งคู่
+ * Load pins: ไม่ล็อกอิน = โหลดจาก storage เท่านั้น
+ * ล็อกอิน = ใช้ข้อมูลจาก database ของ user เป็นหลัก แล้วรวมกับ local storage
+ * — ถ้าซ้ำกันทั้ง local และ database ให้เอาจาก database
  */
 export async function loadPins(
   isOnline: boolean
@@ -113,12 +113,12 @@ export async function loadPins(
 
 const STORAGE_OWNER_LABELS = ["เครื่องนี้", "รายการในเครื่อง"];
 
-/** ตรวจว่า pin นี้เป็นของ storage (ไม่มีเจ้าของ) */
-function isStoragePin(p: PinnitItem): boolean {
+/** ตรวจว่า pin นี้เป็นของ local storage (ไม่มีเจ้าของ) — ใช้เมื่อล็อกอินเพื่อซ่อนปุ่มลบ/แก้ไข */
+export function isStoragePin(p: PinnitItem): boolean {
   return !p.ownerLabel || STORAGE_OWNER_LABELS.includes(p.ownerLabel);
 }
 
-/** Save pins: ล็อกอิน → แยกบันทึก (ของ user ไป DB/cache, ของ storage ไป STORAGE_KEY); ไม่ล็อกอิน → เก็บเฉพาะ storage */
+/** Save pins: ไม่ล็อกอิน → เขียนเฉพาะ STORAGE_KEY; ล็อกอิน → เขียนเฉพาะ DB + cache ไม่แตะ local storage */
 export async function savePins(
   pins: PinnitItem[],
   isOnline: boolean
@@ -134,36 +134,8 @@ export async function savePins(
     session.user.user_metadata?.username ||
     "บัญชีของฉัน";
   const userPins = sorted.filter((p) => !isStoragePin(p));
-  const storageFromList = sorted.filter((p) => isStoragePin(p));
-  const userDedupeKeys = new Set(userPins.map(pinDedupeKey));
-  const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
-  const existingStorage: PinnitItem[] = existingRaw ? JSON.parse(existingRaw) : [];
-  const existingOnly = (Array.isArray(existingStorage) ? existingStorage : []).filter(
-    (p) => !userDedupeKeys.has(pinDedupeKey(p))
-  );
-  const storagePins = mergeAndDedupePins(storageFromList, existingOnly);
 
   await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(userPins));
-  const freshRaw = await AsyncStorage.getItem(STORAGE_KEY);
-  const freshStorage: PinnitItem[] = freshRaw ? JSON.parse(freshRaw) : [];
-  const freshOnly = (Array.isArray(freshStorage) ? freshStorage : []).filter(
-    (p) => !userDedupeKeys.has(pinDedupeKey(p))
-  );
-  let finalStoragePins = mergeAndDedupePins(storagePins, freshOnly);
-  if (finalStoragePins.length === 0) {
-    const safeguardRaw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (safeguardRaw) {
-      try {
-        const existing = JSON.parse(safeguardRaw) as PinnitItem[];
-        if (Array.isArray(existing) && existing.length > 0) {
-          finalStoragePins = existing;
-        }
-      } catch {
-        /* ใช้ finalStoragePins เดิม (ว่าง) */
-      }
-    }
-  }
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(finalStoragePins));
 
   if (isOnline) {
     try {
@@ -253,7 +225,7 @@ export async function getLocalOnlyPinsCount(): Promise<number> {
   return storagePins.filter((p) => !userKeys.has(pinDedupeKey(p))).length;
 }
 
-/** นำข้อมูลใน storage (ไม่มีเจ้าของ) ขึ้น database (เป็นของ user) — เรียกเมื่อ user กด "นำขึ้นบัญชี" และยืนยัน */
+/** อัปโหลดปักหมุดขึ้นบัญชี: นำรายการในเครื่อง (STORAGE_KEY) ขึ้น database ของ user — ข้อมูลใน local ยังอยู่เหมือนเดิม; เรียกเมื่อ user กด "อัปโหลดปักหมุดขึ้นบัญชี" */
 export async function mergeLocalPinsToSupabase(): Promise<void> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return;

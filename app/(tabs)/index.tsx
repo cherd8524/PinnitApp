@@ -18,7 +18,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { PinnitItem } from "@/types/pinnit";
 import { getLocationName } from "@/utils/geocoding";
 import { formatTimeAgo } from "@/utils/format";
-import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
+import { loadPins, savePins, runPendingSync, isStoragePin } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
 import { PinItem } from "@/components/PinItem";
 import { supabase } from "@/lib/supabase";
@@ -39,6 +39,7 @@ export default function Index() {
     const [isEditModalVisible, setIsEditModalVisible] = useState(false);
     const [editingPin, setEditingPin] = useState<PinnitItem | null>(null);
     const [editPinName, setEditPinName] = useState("");
+    const [session, setSession] = useState<{ user: { id: string } } | null>(null);
 
     const isDark = colorScheme === "dark";
     const isOnline = useNetworkStatus();
@@ -61,6 +62,10 @@ export default function Index() {
             setIsLoadingPins(false);
         })();
     }, [isOnline]);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+    }, []);
 
     // เมื่อกลับมาออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้น database อัตโนมัติ แล้วโหลดใหม่
     useEffect(() => {
@@ -208,6 +213,11 @@ export default function Index() {
     };
 
     const handleDeletePin = async (pinId: string) => {
+        const pin = pins.find((p) => p.id === pinId);
+        if (session && pin && isStoragePin(pin)) {
+            Alert.alert("รายการในเครื่อง", "ไม่สามารถลบรายการในเครื่องได้เมื่อล็อกอินอยู่");
+            return;
+        }
         Alert.alert(
             "ลบตำแหน่ง",
             "คุณแน่ใจหรือไม่ว่าต้องการลบตำแหน่งนี้?",
@@ -240,6 +250,10 @@ export default function Index() {
     };
 
     const handleStartEditPin = (item: PinnitItem) => {
+        if (session && isStoragePin(item)) {
+            Alert.alert("รายการในเครื่อง", "ไม่สามารถแก้ไขรายการในเครื่องได้เมื่อล็อกอินอยู่");
+            return;
+        }
         setEditingPin(item);
         setEditPinName(item.name);
         setIsEditModalVisible(true);
@@ -295,6 +309,7 @@ export default function Index() {
             onDelete={handleDeletePin}
             onViewMap={handleViewMap}
             onEdit={handleStartEditPin}
+            readOnly={!!(session && isStoragePin(item))}
             colors={colors}
         />
     );

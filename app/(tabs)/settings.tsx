@@ -45,7 +45,6 @@ export default function SettingsScreen() {
   const [session, setSession] = useState<Session | null>(null);
   const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
   const [syncLoading, setSyncLoading] = useState(false);
-  const [localOnlyPinsCount, setLocalOnlyPinsCount] = useState(0);
   const router = useRouter();
   const isOnline = useNetworkStatus();
 
@@ -65,49 +64,42 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     getLastSyncAt().then(setLastSyncAt);
-    if (session) {
-      getLocalOnlyPinsCount().then(setLocalOnlyPinsCount);
-    } else {
-      setLocalOnlyPinsCount(0);
-    }
   }, [session]);
 
   const handleBackupSync = async () => {
     if (!session) {
-      Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่อนำปักหมุดขึ้นบัญชี");
+      Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่ออัปโหลดปักหมุดขึ้นบัญชี");
       return;
     }
     if (!isOnline) {
-      Alert.alert("ออฟไลน์", "ขณะนี้ไม่มีเครือข่าย จะซิงค์เมื่อมีอินเทอร์เน็ต");
+      Alert.alert("ออฟไลน์", "ขณะนี้ไม่มีเครือข่าย");
       return;
     }
-    if (localOnlyPinsCount > 0) {
-      setSyncLoading(true);
-      try {
-        await mergeLocalPinsToSupabase();
-        setLocalOnlyPinsCount(0);
-        const t = await getLastSyncAt();
-        setLastSyncAt(t);
-        Alert.alert("สำเร็จ", "นำข้อมูลในเครื่องขึ้นบัญชีแล้ว");
-      } catch (e) {
-        console.error("Merge sync error", e);
-        Alert.alert("ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
-      } finally {
-        setSyncLoading(false);
-      }
+    const count = await getLocalOnlyPinsCount();
+    if (count === 0) {
+      Alert.alert("ไม่มีรายการที่ต้องนำขึ้นบัญชี", "ไม่มีข้อมูลในเครื่องที่ยังไม่อยู่ในบัญชี");
       return;
     }
-    Alert.alert("ไม่มีรายการที่ต้องนำขึ้นบัญชี", "ไม่มีข้อมูลในเครื่องที่ยังไม่อยู่ในบัญชี หรือเมื่อกลับออนไลน์หลังเน็ตหลุด ระบบจะนำปักหมุดที่ปักตอนออฟไลน์ขึ้นบัญชีให้อัตโนมัติ");
+    setSyncLoading(true);
+    try {
+      await mergeLocalPinsToSupabase();
+      const t = await getLastSyncAt();
+      setLastSyncAt(t);
+      Alert.alert("สำเร็จ", "อัปโหลดปักหมุดขึ้นบัญชีแล้ว (ข้อมูลในเครื่องยังอยู่เหมือนเดิม)");
+    } catch (e) {
+      console.error("Merge sync error", e);
+      Alert.alert("ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
+    } finally {
+      setSyncLoading(false);
+    }
   };
 
   const backupSyncSubtitle =
     !session
-      ? "ล็อกอินเพื่อนำปักหมุดขึ้นบัญชี"
+      ? "ล็อกอินเพื่ออัปโหลดปักหมุดขึ้นบัญชี"
       : !isOnline
         ? "ออฟไลน์ — เมื่อกลับออนไลน์จะนำปักหมุดที่ปักตอนเน็ตหลุดขึ้นบัญชีอัตโนมัติ"
-        : localOnlyPinsCount > 0
-          ? `มี ${localOnlyPinsCount} จุดในเครื่อง — กดเพื่อนำขึ้นบัญชี`
-          : "ไม่มีรายการในเครื่องที่ต้องนำขึ้นบัญชี";
+        : "อัปโหลดปักหมุดในเครื่องขึ้นบัญชี";
 
   // Load saved preference on mount
   useEffect(() => {
@@ -352,7 +344,7 @@ export default function SettingsScreen() {
             >
               <SettingsRow
                 icon="cloud-done-outline"
-                label="นำปักหมุดขึ้นบัญชี"
+                label="อัปโหลดปักหมุดขึ้นบัญชี"
                 subtitle={syncLoading ? "กำลังซิงค์..." : backupSyncSubtitle}
                 onPress={handleBackupSync}
                 isDark={isDark}
@@ -534,7 +526,7 @@ export default function SettingsScreen() {
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
                 • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud เมื่อออฟไลน์ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
-                {"\n"}• "นำปักหมุดขึ้นบัญชี" = อัปเดตปักหมุดในเครื่องใส่ในบัญชีผู้ใช้
+                {"\n"}• "อัปโหลดปักหมุดขึ้นบัญชี" = นำปักหมุดในเครื่องขึ้นบัญชี (ข้อมูลในเครื่องยังอยู่เหมือนเดิม)
                 {"\n"}• "ดาวน์โหลดปักหมุดลงเครื่อง" = ดึงปักหมุดจากบัญชีลงเครื่อง จะเห็นหลังออกจากระบบ
               </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>

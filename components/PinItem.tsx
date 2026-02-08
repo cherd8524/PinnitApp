@@ -8,6 +8,7 @@ import {
   Dimensions,
   StyleSheet,
   Pressable,
+  Alert,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { PinnitItem } from "@/types/pinnit";
@@ -18,6 +19,8 @@ type PinItemProps = {
   onDelete: (id: string) => void;
   onViewMap: (item: PinnitItem) => void;
   onEdit: (item: PinnitItem) => void;
+  /** เมื่อ true = รายการในเครื่องที่แสดงตอนล็อกอิน — ไม่แสดงปุ่มลบ/แก้ไข */
+  readOnly?: boolean;
   colors: {
     card: string;
     textPrimary: string;
@@ -30,6 +33,7 @@ export function PinItem({
   onDelete,
   onViewMap,
   onEdit,
+  readOnly = false,
   colors,
 }: PinItemProps) {
   const [isSwiped, setIsSwiped] = useState(false);
@@ -99,39 +103,39 @@ export function PinItem({
         },
       });
     },
-    [item.id, widthAnim, fullWidth, swipedWidth, deleteButtonWidth, isSwiped]
+    [item.id, widthAnim, fullWidth, swipedWidth, deleteButtonWidth, isSwiped, readOnly]
   );
 
   return (
     <View style={styles.swipeContainer}>
-      {/* Delete button background */}
-      <View style={styles.deleteButtonContainer}>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => onDelete(item.id)}
-        >
-          <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-        </TouchableOpacity>
-      </View>
+      {!readOnly ? (
+        <View style={styles.deleteButtonContainer}>
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => onDelete(item.id)}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-      {/* Main card */}
       <Animated.View
         style={[
           styles.pinCard,
           {
             backgroundColor: colors.card,
             shadowColor: "#0F172A",
-            width: widthAnim,
-            borderTopRightRadius: isSwiped ? 0 : 18,
-            borderBottomRightRadius: isSwiped ? 0 : 18,
-            borderRightWidth: isSwiped ? 0 : 1,
+            width: readOnly ? fullWidth : widthAnim,
+            borderTopRightRadius: !readOnly && isSwiped ? 0 : 18,
+            borderBottomRightRadius: !readOnly && isSwiped ? 0 : 18,
+            borderRightWidth: !readOnly && isSwiped ? 0 : 1,
           },
         ]}
-        {...panResponder.panHandlers}
+        {...(readOnly ? {} : panResponder.panHandlers)}
       >
         <Pressable
           style={styles.cardContent}
-          onLongPress={() => onEdit(item)}
+          onLongPress={() => (readOnly ? Alert.alert("รายการในเครื่อง", "ไม่สามารถแก้ไขหรือลบรายการในเครื่องได้เมื่อล็อกอินอยู่") : onEdit(item))}
           delayLongPress={400}
         >
           <View style={styles.pinCardTextColumn}>
