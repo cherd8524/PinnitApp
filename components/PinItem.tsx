@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, useCallback } from "react";
+import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import {
   View,
   Text,
@@ -21,6 +21,12 @@ type PinItemProps = {
   onEdit: (item: PinnitItem) => void;
   /** เมื่อ true = รายการในเครื่องที่แสดงตอนล็อกอิน — ไม่แสดงปุ่มลบ/แก้ไข */
   readOnly?: boolean;
+  /** id ของการ์ดที่กำลังสไลด์เปิดอยู่ (จาก parent) — ถ้าไม่ใช่ตัวนี้ ให้สไลด์กลับ */
+  openId?: string | null;
+  /** เรียกเมื่อผู้ใช้สไลด์เปิดการ์ดนี้ */
+  onSwipeOpen?: () => void;
+  /** เรียกเมื่อผู้ใช้แตะที่การ์ด (ไม่ใช่ปุ่มลบ) — ใช้ให้ parent ปิดการ์ดอื่นที่เปิดอยู่ */
+  onTapCard?: () => void;
   colors: {
     card: string;
     textPrimary: string;
@@ -34,6 +40,9 @@ export function PinItem({
   onViewMap,
   onEdit,
   readOnly = false,
+  openId = null,
+  onSwipeOpen,
+  onTapCard,
   colors,
 }: PinItemProps) {
   const [isSwiped, setIsSwiped] = useState(false);
@@ -84,6 +93,7 @@ export function PinItem({
           if (finalValue < swipeThreshold) {
             // Swipe left enough to show delete
             setIsSwiped(true);
+            onSwipeOpen?.();
             Animated.spring(widthAnim, {
               toValue: swipedWidth,
               useNativeDriver: false,
@@ -117,6 +127,12 @@ export function PinItem({
     }).start();
   }, [isSwiped, widthAnim, fullWidth]);
 
+  useEffect(() => {
+    if (openId != null && openId !== item.id && isSwiped) {
+      closeSwipe();
+    }
+  }, [openId, item.id, isSwiped]);
+
   return (
     <View style={styles.swipeContainer}>
       <View style={styles.deleteButtonContainer}>
@@ -144,7 +160,10 @@ export function PinItem({
       >
         <Pressable
           style={styles.cardContent}
-          onPress={closeSwipe}
+          onPress={() => {
+            onTapCard?.();
+            closeSwipe();
+          }}
           onLongPress={() => (readOnly ? Alert.alert("ไม่สามารถแก้ไขได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถแก้ไขหรือลบได้") : onEdit(item))}
           delayLongPress={400}
         >
@@ -176,6 +195,7 @@ export function PinItem({
           <TouchableOpacity
             style={styles.viewMapButton}
             onPress={() => {
+              onTapCard?.();
               closeSwipe();
               onViewMap(item);
             }}

@@ -10,6 +10,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -43,6 +44,7 @@ export default function Index() {
     const [editPinName, setEditPinName] = useState("");
     const [session, setSession] = useState<{ user: { id: string } } | null>(null);
     const [refreshing, setRefreshing] = useState(false);
+    const [swipedPinId, setSwipedPinId] = useState<string | null>(null);
 
     const isDark = colorScheme === "dark";
     const isOnline = useNetworkStatus();
@@ -156,6 +158,7 @@ export default function Index() {
     }, []);
 
     const handlePinCurrentSpot = async () => {
+        setSwipedPinId(null);
         if (!currentLocation) return;
 
         // Show modal and fetch location name
@@ -329,6 +332,9 @@ export default function Index() {
             onViewMap={handleViewMap}
             onEdit={handleStartEditPin}
             readOnly={!!(session && isStoragePin(item))}
+            openId={swipedPinId}
+            onSwipeOpen={() => setSwipedPinId(item.id)}
+            onTapCard={() => setSwipedPinId(null)}
             colors={colors}
         />
     );
@@ -337,7 +343,8 @@ export default function Index() {
         <SafeAreaView
             style={[styles.safeArea, { backgroundColor: colors.background }]}
         >
-            <View style={styles.screen}>
+            <TouchableWithoutFeedback onPress={() => setSwipedPinId(null)}>
+                <View style={styles.screen}>
                 {/* Large Title Header */}
                 <View style={styles.header}>
                     <View style={styles.headerTopRow}>
@@ -548,6 +555,7 @@ export default function Index() {
                     )}
                 </View>
             </View>
+            </TouchableWithoutFeedback>
 
             {/* Pin Name Modal */}
             <Modal
