@@ -13,11 +13,19 @@ function sortPins(pins: PinnitItem[]): PinnitItem[] {
   return [...pins].sort((a, b) => b.timestamp - a.timestamp);
 }
 
+/** สร้าง key สำหรับตัดซ้ำ: ปัดพิกัด 6 ตำแหน่ง เพื่อกันความต่างจาก float หลัง round-trip กับ DB */
+function pinDedupeKey(p: PinnitItem): string {
+  const lat = Math.round(p.latitude * 1e6) / 1e6;
+  const lon = Math.round(p.longitude * 1e6) / 1e6;
+  return `${lat}-${lon}-${p.timestamp}`;
+}
+
+/** รวม pins จาก DB กับ storage โดยตัดซ้ำ — ถ้ารายการเดียวกันมีทั้งสองที่ ให้แสดงแค่รายการเดียว (เลือกจาก DB ก่อน) */
 function mergeAndDedupePins(supabasePins: PinnitItem[], localPins: PinnitItem[]): PinnitItem[] {
   const seen = new Set<string>();
   const result: PinnitItem[] = [];
   for (const p of [...supabasePins, ...localPins]) {
-    const key = `${p.latitude}-${p.longitude}-${p.timestamp}`;
+    const key = pinDedupeKey(p);
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(p);
@@ -25,32 +33,41 @@ function mergeAndDedupePins(supabasePins: PinnitItem[], localPins: PinnitItem[])
   return sortPins(result);
 }
 
+/** โหลด pins จาก storage (ข้อมูลไม่มีเจ้าของ) */
+async function getStoragePins(): Promise<PinnitItem[]> {
+  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
+  try {
+    return (JSON.parse(raw) as PinnitItem[]).map((p) => ({
+      ...p,
+      ownerLabel: p.ownerLabel ?? "เครื่องนี้",
+    }));
+  } catch {
+    return [];
+  }
+}
+
 /**
- * Load pins:
- * - ไม่ล็อกอิน: โหลดจาก storage เท่านั้น (ข้อมูลไม่มีเจ้าของ)
- * - ล็อกอิน: โหลดจาก database เท่านั้น (หรือ cache เมื่อออฟไลน์) — ไม่รวมกับ storage
- * Storage กับ database แยกกัน ไม่ merge เว้นแต่ user กดโอนข้อมูลเอง
+ * Load pins: แสดงข้อมูลใน storage เสมอ (ทั้งล็อกอินและไม่ล็อกอิน)
+ * - ไม่ล็อกอิน: โหลดจาก storage เท่านั้น
+ * - ล็อกอิน: โหลดจาก database (หรือ cache) แล้วรวมกับ storage เพื่อแสดงทั้งคู่
  */
 export async function loadPins(
   isOnline: boolean
 ): Promise<PinnitItem[]> {
   const { data: { session } } = await supabase.auth.getSession();
+  const storagePins = await getStoragePins();
+
   if (!session?.user) {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const pins = (JSON.parse(raw) as PinnitItem[]).map((p) => ({
-        ...p,
-        ownerLabel: p.ownerLabel ?? "เครื่องนี้",
-      }));
-      return sortPins(pins);
-    }
-    return [];
+    return sortPins(storagePins);
   }
 
   const ownerName =
     session.user.user_metadata?.full_name ||
     session.user.user_metadata?.username ||
     "บัญชีของฉัน";
+
+  let dbPins: PinnitItem[] = [];
 
   if (isOnline) {
     try {
@@ -60,7 +77,7 @@ export async function loadPins(
         .eq("user_id", session.user.id)
         .order("timestamp", { ascending: false });
       if (error) throw error;
-      const pins: PinnitItem[] = (data ?? []).map((row) => ({
+      dbPins = (data ?? []).map((row) => ({
         id: row.id,
         name: row.name,
         latitude: row.latitude,
@@ -71,23 +88,37 @@ export async function loadPins(
         timestamp: Number(row.timestamp),
         ownerLabel: ownerName,
       }));
-      await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(pins));
+      await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(dbPins));
       await AsyncStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-      return pins;
     } catch (e) {
       console.warn("loadPins from Supabase failed, using cache", e);
+      const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
+      dbPins = cache ? JSON.parse(cache) : [];
     }
+  } else {
+    const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
+    dbPins = cache ? JSON.parse(cache) : [];
   }
 
-  const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
-  const pins: PinnitItem[] = cache ? JSON.parse(cache) : [];
-  return pins.map((p) => ({
+  const dbPinsWithOwner = dbPins.map((p) => ({
     ...p,
     ownerLabel: p.ownerLabel ?? ownerName,
   }));
+  const storagePinsForMerge = storagePins.map((p) => ({
+    ...p,
+    ownerLabel: p.ownerLabel ?? "รายการในเครื่อง",
+  }));
+  return mergeAndDedupePins(dbPinsWithOwner, storagePinsForMerge);
 }
 
-/** Save pins: ล็อกอิน → ติดต่อ database (Supabase); ไม่ล็อกอิน → เก็บเฉพาะ storage (AsyncStorage) */
+const STORAGE_OWNER_LABELS = ["เครื่องนี้", "รายการในเครื่อง"];
+
+/** ตรวจว่า pin นี้เป็นของ storage (ไม่มีเจ้าของ) */
+function isStoragePin(p: PinnitItem): boolean {
+  return !p.ownerLabel || STORAGE_OWNER_LABELS.includes(p.ownerLabel);
+}
+
+/** Save pins: ล็อกอิน → แยกบันทึก (ของ user ไป DB/cache, ของ storage ไป STORAGE_KEY); ไม่ล็อกอิน → เก็บเฉพาะ storage */
 export async function savePins(
   pins: PinnitItem[],
   isOnline: boolean
@@ -98,12 +129,21 @@ export async function savePins(
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
     return;
   }
-  await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(sorted));
+  const ownerName =
+    session.user.user_metadata?.full_name ||
+    session.user.user_metadata?.username ||
+    "บัญชีของฉัน";
+  const userPins = sorted.filter((p) => !isStoragePin(p));
+  const storagePins = sorted.filter((p) => isStoragePin(p));
+
+  await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(userPins));
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(storagePins));
+
   if (isOnline) {
     try {
       await supabase.from("pins").delete().eq("user_id", session.user.id);
-      if (sorted.length > 0) {
-        const rows = sorted.map((p) => ({
+      if (userPins.length > 0) {
+        const rows = userPins.map((p) => ({
           user_id: session.user.id,
           name: p.name,
           latitude: p.latitude,
@@ -157,12 +197,15 @@ export async function getLastSyncAt(): Promise<number | null> {
   return s ? parseInt(s, 10) : null;
 }
 
-/** โอนข้อมูลจาก database ใส่ storage: copy รายการของ user (จาก cache/DB) ลง STORAGE_KEY — เรียกเมื่อ user กด "เก็บสำเนารายการลงเครื่อง" */
+/** โอนข้อมูลจาก database ใส่ storage: นำรายการของ user (จาก cache/DB) ไปเพิ่มใน STORAGE_KEY โดยไม่ทับของเดิม — เรียกเมื่อ user กด "เก็บสำเนารายการลงเครื่อง" */
 export async function copyCacheToLocalOnLogout(): Promise<void> {
-  const cache = await AsyncStorage.getItem(PINS_CACHE_KEY);
-  if (cache) {
-    await AsyncStorage.setItem(STORAGE_KEY, cache);
-  }
+  const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
+  const existingPins: PinnitItem[] = existingRaw ? JSON.parse(existingRaw) : [];
+  const cacheRaw = await AsyncStorage.getItem(PINS_CACHE_KEY);
+  if (!cacheRaw) return;
+  const cachePins: PinnitItem[] = JSON.parse(cacheRaw);
+  const merged = mergeAndDedupePins(cachePins, existingPins);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
 }
 
 /** จำนวน pins ใน storage (ข้อมูลไม่มีเจ้าของ) — ใช้เมื่อล็อกอินแล้ว เพื่อแจ้งว่ามีรายการใน storage ที่จะ "นำขึ้นบัญชี" ได้ */
@@ -210,6 +253,5 @@ export async function mergeLocalPinsToSupabase(): Promise<void> {
   }
   await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(merged));
   await AsyncStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-  await AsyncStorage.removeItem(STORAGE_KEY);
   await AsyncStorage.removeItem(PENDING_SYNC_KEY);
 }
