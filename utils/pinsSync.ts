@@ -208,16 +208,23 @@ export async function copyCacheToLocalOnLogout(): Promise<void> {
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
 }
 
-/** จำนวน pins ใน storage (ข้อมูลไม่มีเจ้าของ) — ใช้เมื่อล็อกอินแล้ว เพื่อแจ้งว่ามีรายการใน storage ที่จะ "นำขึ้นบัญชี" ได้ */
+/** จำนวน pins ใน storage ที่ยังไม่อยู่ในบัญชี — ล็อกอินแล้วนับเฉพาะรายการที่ยังไม่ได้ซิงค์ (ไม่นับสำเนาที่ copy ลง storage ตอน logout) */
 export async function getLocalOnlyPinsCount(): Promise<number> {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  if (!raw) return 0;
+  const storageRaw = await AsyncStorage.getItem(STORAGE_KEY);
+  if (!storageRaw) return 0;
+  let storagePins: PinnitItem[];
   try {
-    const pins = JSON.parse(raw) as PinnitItem[];
-    return Array.isArray(pins) ? pins.length : 0;
+    storagePins = JSON.parse(storageRaw) as PinnitItem[];
+    if (!Array.isArray(storagePins)) return 0;
   } catch {
     return 0;
   }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) return storagePins.length;
+  const cacheRaw = await AsyncStorage.getItem(PINS_CACHE_KEY);
+  const userPins: PinnitItem[] = cacheRaw ? JSON.parse(cacheRaw) : [];
+  const userKeys = new Set((Array.isArray(userPins) ? userPins : []).map(pinDedupeKey));
+  return storagePins.filter((p) => !userKeys.has(pinDedupeKey(p))).length;
 }
 
 /** นำข้อมูลใน storage (ไม่มีเจ้าของ) ขึ้น database (เป็นของ user) — เรียกเมื่อ user กด "นำขึ้นบัญชี" และยืนยัน */
@@ -239,7 +246,7 @@ export async function mergeLocalPinsToSupabase(): Promise<void> {
     createdAt: row.created_at ? new Date(row.created_at).toISOString() : "",
     timestamp: Number(row.timestamp),
   }));
-  const merged = sortPins([...existing, ...localPins]);
+  const merged = mergeAndDedupePins(existing, localPins);
   const rows = merged.map((p) => ({
     user_id: session.user.id,
     name: p.name,
