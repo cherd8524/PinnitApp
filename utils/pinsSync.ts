@@ -134,10 +134,23 @@ export async function savePins(
     session.user.user_metadata?.username ||
     "บัญชีของฉัน";
   const userPins = sorted.filter((p) => !isStoragePin(p));
-  const storagePins = sorted.filter((p) => isStoragePin(p));
+  const storageFromList = sorted.filter((p) => isStoragePin(p));
+  const userDedupeKeys = new Set(userPins.map(pinDedupeKey));
+  const existingRaw = await AsyncStorage.getItem(STORAGE_KEY);
+  const existingStorage: PinnitItem[] = existingRaw ? JSON.parse(existingRaw) : [];
+  const existingOnly = (Array.isArray(existingStorage) ? existingStorage : []).filter(
+    (p) => !userDedupeKeys.has(pinDedupeKey(p))
+  );
+  const storagePins = mergeAndDedupePins(storageFromList, existingOnly);
 
   await AsyncStorage.setItem(PINS_CACHE_KEY, JSON.stringify(userPins));
-  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(storagePins));
+  const freshRaw = await AsyncStorage.getItem(STORAGE_KEY);
+  const freshStorage: PinnitItem[] = freshRaw ? JSON.parse(freshRaw) : [];
+  const freshOnly = (Array.isArray(freshStorage) ? freshStorage : []).filter(
+    (p) => !userDedupeKeys.has(pinDedupeKey(p))
+  );
+  const finalStoragePins = mergeAndDedupePins(storagePins, freshOnly);
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(finalStoragePins));
 
   if (isOnline) {
     try {
