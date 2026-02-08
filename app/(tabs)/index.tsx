@@ -84,18 +84,20 @@ export default function Index() {
         return () => { cancelled = true; };
     }, [isOnline]);
 
-    // Reload pins when screen is focused
+    // Reload pins และ session เมื่อโฟกัส (realtime หลัง login/logout หรืออัปโหลด/ดาวน์โหลดจาก Settings)
     useFocusEffect(
         useCallback(() => {
-            const loadAllPins = async () => {
+            const refresh = async () => {
                 try {
+                    const { data: { session: s } } = await supabase.auth.getSession();
+                    setSession(s);
                     const loadedPins = await loadPins(isOnline);
                     setPins(loadedPins);
                 } catch (error) {
                     console.error("Error loading pins:", error);
                 }
             };
-            loadAllPins();
+            refresh();
         }, [isOnline])
     );
 
@@ -215,7 +217,7 @@ export default function Index() {
     const handleDeletePin = async (pinId: string) => {
         const pin = pins.find((p) => p.id === pinId);
         if (session && pin && isStoragePin(pin)) {
-            Alert.alert("รายการในเครื่อง", "ไม่สามารถลบรายการในเครื่องได้เมื่อล็อกอินอยู่");
+            Alert.alert("ไม่สามารถลบได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถลบได้");
             return;
         }
         Alert.alert(
@@ -251,7 +253,7 @@ export default function Index() {
 
     const handleStartEditPin = (item: PinnitItem) => {
         if (session && isStoragePin(item)) {
-            Alert.alert("รายการในเครื่อง", "ไม่สามารถแก้ไขรายการในเครื่องได้เมื่อล็อกอินอยู่");
+            Alert.alert("ไม่สามารถแก้ไขได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถแก้ไขได้");
             return;
         }
         setEditingPin(item);

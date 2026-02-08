@@ -135,7 +135,7 @@ export function PinItem({
       >
         <Pressable
           style={styles.cardContent}
-          onLongPress={() => (readOnly ? Alert.alert("รายการในเครื่อง", "ไม่สามารถแก้ไขหรือลบรายการในเครื่องได้เมื่อล็อกอินอยู่") : onEdit(item))}
+          onLongPress={() => (readOnly ? Alert.alert("ไม่สามารถแก้ไขได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถแก้ไขหรือลบได้") : onEdit(item))}
           delayLongPress={400}
         >
           <View style={styles.pinCardTextColumn}>
