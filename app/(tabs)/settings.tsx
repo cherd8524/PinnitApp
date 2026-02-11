@@ -509,28 +509,37 @@ export default function SettingsScreen() {
               style={styles.userGuideScroll}
               showsVerticalScrollIndicator={true}
             >
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                คู่มือนี้แนะนำวิธีใช้งานแอปและฟีเจอร์ต่างๆ ของ Pinnit เพื่อให้คุณใช้แอปได้อย่างเต็มประสิทธิภาพ
+              </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                แท็บหลัก
+                ฟีเจอร์แท็บรายการ
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • รายการ: แสดงรายการตำแหน่งที่ปักหมุด กด + เพื่อเพิ่มตำแหน่งปัจจุบัน กดที่รายการเพื่อดูบนแผนที่ กดค้างเพื่อแก้ไข ปัดซ้ายเพื่อลบ
+                • กดปุ่ม + เพื่อเพิ่มตำแหน่งปัจจุบันลงรายการ
+                {"\n"}• กดที่รายการเพื่อดูตำแหน่งบนแผนที่
+                {"\n"}• กดค้างเพื่อแก้ไขชื่อหรือตำแหน่ง
+                {"\n"}• ปัดซ้ายเพื่อลบรายการ
               </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                แผนที่
+                ฟีเจอร์แผนที่
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • แสดง markers ของตำแหน่งที่บันทึก กดที่แผนที่เพื่อปักหมุดใหม่ เลือกสไตล์แผนที่ได้จากเมนูตั้งค่า
+                • แสดง markers ของตำแหน่งที่บันทึกทั้งหมด
+                {"\n"}• กดที่ตำแหน่งบนแผนที่เพื่อปักหมุดใหม่
+                {"\n"}• เลือกสไตล์แผนที่ได้จากเมนูตั้งค่า
               </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                บัญชีและซิงค์
+                ฟีเจอร์บัญชีและซิงค์
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud เมื่อออฟไลน์ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
-                {"\n"}• "อัปโหลดปักหมุดขึ้นบัญชี" = นำปักหมุดในเครื่องขึ้นบัญชี (ข้อมูลในเครื่องยังอยู่เหมือนเดิม)
-                {"\n"}• "ดาวน์โหลดปักหมุดลงเครื่อง" = ดึงปักหมุดจากบัญชีลงเครื่อง จะเห็นหลังออกจากระบบ
+                • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud
+                {"\n"}• เมื่อออฟไลน์ ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
+                {"\n"}• อัปโหลดปักหมุดขึ้นบัญชี: นำปักหมุดในเครื่องขึ้นบัญชี
+                {"\n"}• ดาวน์โหลดปักหมุดลงเครื่อง: ดึงปักหมุดจากบัญชีลงเครื่อง
               </Text>
               <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ตั้งค่า
+                ฟีเจอร์ตั้งค่า
               </Text>
               <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
                 • สไตล์แผนที่: มาตรฐาน / ดาวเทียม / ไฮบริด / ภูมิประเทศ
