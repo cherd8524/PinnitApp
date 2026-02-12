@@ -4,23 +4,27 @@ import {
     Alert,
     FlatList,
     Modal,
+    RefreshControl,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
+    TouchableWithoutFeedback,
     View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useColorScheme } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
 import { PinnitItem } from "@/types/pinnit";
 import { getLocationName } from "@/utils/geocoding";
 import { formatTimeAgo } from "@/utils/format";
-import { loadPins, savePins } from "@/utils/storage";
+import { loadPins, savePins, runPendingSync, isStoragePin } from "@/utils/pinsSync";
+import { useNetworkStatus } from "@/utils/network";
 import { PinItem } from "@/components/PinItem";
+import { supabase } from "@/lib/supabase";
 
 export default function Index() {
     const colorScheme = useColorScheme();
@@ -35,8 +39,15 @@ export default function Index() {
     const [showPinModal, setShowPinModal] = useState(false);
     const [pinName, setPinName] = useState("");
     const [isLoadingPinName, setIsLoadingPinName] = useState(false);
+    const [isEditModalVisible, setIsEditModalVisible] = useState(false);
+    const [editingPin, setEditingPin] = useState<PinnitItem | null>(null);
+    const [editPinName, setEditPinName] = useState("");
+    const [session, setSession] = useState<{ user: { id: string } } | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+    const [swipedPinId, setSwipedPinId] = useState<string | null>(null);
 
     const isDark = colorScheme === "dark";
+    const isOnline = useNetworkStatus();
 
     const colors = useMemo(
         () => ({
@@ -51,25 +62,48 @@ export default function Index() {
     // Load pins on mount
     useEffect(() => {
         (async () => {
-            const loadedPins = await loadPins();
+            const loadedPins = await loadPins(isOnline);
             setPins(loadedPins);
             setIsLoadingPins(false);
         })();
+    }, [isOnline]);
+
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
     }, []);
 
-    // Reload pins when screen is focused (to show newly added pins from Map screen)
+    // เมื่อกลับมาออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้น database อัตโนมัติ แล้วโหลดใหม่
+    useEffect(() => {
+        if (!isOnline) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                await runPendingSync();
+                if (cancelled) return;
+                const loadedPins = await loadPins(true);
+                setPins(loadedPins);
+            } catch (error) {
+                console.error("Error running pending sync:", error);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [isOnline]);
+
+    // Reload pins และ session เมื่อโฟกัส (realtime หลัง login/logout หรืออัปโหลด/ดาวน์โหลดจาก Settings)
     useFocusEffect(
         useCallback(() => {
-            const loadAllPins = async () => {
+            const refresh = async () => {
                 try {
-                    const loadedPins = await loadPins();
+                    const { data: { session: s } } = await supabase.auth.getSession();
+                    setSession(s);
+                    const loadedPins = await loadPins(isOnline);
                     setPins(loadedPins);
                 } catch (error) {
                     console.error("Error loading pins:", error);
                 }
             };
-            loadAllPins();
-        }, [])
+            refresh();
+        }, [isOnline])
     );
 
     useEffect(() => {
@@ -124,6 +158,7 @@ export default function Index() {
     }, []);
 
     const handlePinCurrentSpot = async () => {
+        setSwipedPinId(null);
         if (!currentLocation) return;
 
         // Show modal and fetch location name
@@ -139,7 +174,7 @@ export default function Index() {
             setPinName(locationName);
         } catch (error) {
             console.error("Error fetching location name:", error);
-            setPinName("Location Name");
+            setPinName("ชื่อตำแหน่ง");
         } finally {
             setIsLoadingPinName(false);
         }
@@ -148,9 +183,14 @@ export default function Index() {
     const handleConfirmPin = async () => {
         if (!currentLocation) return;
 
-        const finalName = pinName.trim() || "Location Name";
+        const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
         try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const ownerLabel = session?.user
+                ? (session.user.user_metadata?.full_name ?? session.user.user_metadata?.username ?? "บัญชีของฉัน")
+                : "เครื่องนี้";
+
             const timestamp = Date.now();
             const newPin: PinnitItem = {
                 id: `pin_${timestamp}_${Math.random().toString(36).substr(2, 9)}`,
@@ -159,18 +199,19 @@ export default function Index() {
                 longitude: currentLocation.longitude,
                 createdAt: formatTimeAgo(timestamp),
                 timestamp: timestamp,
+                ownerLabel,
             };
 
             const updatedPins = [newPin, ...pins];
-            await savePins(updatedPins);
+            await savePins(updatedPins, isOnline);
             setPins(updatedPins);
 
             setShowPinModal(false);
             setPinName("");
-            Alert.alert("Success", "Location pinned successfully!");
+            Alert.alert("สำเร็จ", "ปักหมุดตำแหน่งเรียบร้อยแล้ว!");
         } catch (error) {
             console.error("Error pinning location:", error);
-            Alert.alert("Error", "Failed to pin location. Please try again.");
+            Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถปักหมุดตำแหน่งได้ กรุณาลองอีกครั้ง");
         }
     };
 
@@ -180,29 +221,34 @@ export default function Index() {
     };
 
     const handleDeletePin = async (pinId: string) => {
+        const pin = pins.find((p) => p.id === pinId);
+        if (session && pin && isStoragePin(pin)) {
+            Alert.alert("ไม่สามารถลบได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถลบได้");
+            return;
+        }
         Alert.alert(
-            "Delete Location",
-            "Are you sure you want to delete this location?",
+            "ลบตำแหน่ง",
+            "คุณแน่ใจหรือไม่ว่าต้องการลบตำแหน่งนี้?",
             [
                 {
-                    text: "Cancel",
+                    text: "ยกเลิก",
                     style: "cancel",
                 },
                 {
-                    text: "Delete",
+                    text: "ลบ",
                     style: "destructive",
                     onPress: async () => {
                         try {
                             const updatedPins = pins.filter(
                                 (pin) => pin.id !== pinId
                             );
-                            await savePins(updatedPins);
+                            await savePins(updatedPins, isOnline);
                             setPins(updatedPins);
                         } catch (error) {
                             console.error("Error deleting pin:", error);
                             Alert.alert(
-                                "Error",
-                                "Failed to delete location. Please try again."
+                                "เกิดข้อผิดพลาด",
+                                "ไม่สามารถลบตำแหน่งได้ กรุณาลองอีกครั้ง"
                             );
                         }
                     },
@@ -211,8 +257,63 @@ export default function Index() {
         );
     };
 
+    const handleStartEditPin = (item: PinnitItem) => {
+        if (session && isStoragePin(item)) {
+            Alert.alert("ไม่สามารถแก้ไขได้", "คุณไม่ใช่เจ้าของปักหมุดนี้ จึงไม่สามารถแก้ไขได้");
+            return;
+        }
+        setEditingPin(item);
+        setEditPinName(item.name);
+        setIsEditModalVisible(true);
+    };
+
+    const handleCancelEditPin = () => {
+        setIsEditModalVisible(false);
+        setEditingPin(null);
+        setEditPinName("");
+    };
+
+    const handleConfirmEditPin = async () => {
+        if (!editingPin) return;
+
+        const finalName = editPinName.trim();
+        if (!finalName) {
+            Alert.alert("ชื่อไม่ถูกต้อง", "กรุณากรอกชื่อตำแหน่งนี้");
+            return;
+        }
+
+        try {
+            const updatedPins = pins.map((pin) =>
+                pin.id === editingPin.id ? { ...pin, name: finalName } : pin
+            );
+            await savePins(updatedPins, isOnline);
+            setPins(updatedPins);
+            handleCancelEditPin();
+        } catch (error) {
+            console.error("Error updating pin name:", error);
+            Alert.alert(
+                "เกิดข้อผิดพลาด",
+                "ไม่สามารถอัปเดตชื่อตำแหน่งได้ กรุณาลองอีกครั้ง"
+            );
+        }
+    };
+
+    const onRefresh = useCallback(async () => {
+        setRefreshing(true);
+        try {
+            const { data: { session: s } } = await supabase.auth.getSession();
+            setSession(s);
+            const loadedPins = await loadPins(isOnline);
+            setPins(loadedPins);
+        } catch (error) {
+            console.error("Error refreshing pins:", error);
+        } finally {
+            setRefreshing(false);
+        }
+    }, [isOnline]);
+
     const handleViewMap = (item: PinnitItem) => {
-        router.push({
+        router.navigate({
             pathname: "/map",
             params: {
                 latitude: item.latitude.toString(),
@@ -229,6 +330,11 @@ export default function Index() {
             item={item}
             onDelete={handleDeletePin}
             onViewMap={handleViewMap}
+            onEdit={handleStartEditPin}
+            readOnly={!!(session && isStoragePin(item))}
+            openId={swipedPinId}
+            onSwipeOpen={() => setSwipedPinId(item.id)}
+            onTapCard={() => setSwipedPinId(null)}
             colors={colors}
         />
     );
@@ -237,25 +343,48 @@ export default function Index() {
         <SafeAreaView
             style={[styles.safeArea, { backgroundColor: colors.background }]}
         >
-            <View style={styles.screen}>
+            <TouchableWithoutFeedback onPress={() => setSwipedPinId(null)}>
+                <View style={styles.screen}>
                 {/* Large Title Header */}
                 <View style={styles.header}>
-                    <Text
-                        style={[
-                            styles.title,
-                            { color: colors.textPrimary },
-                            { marginTop: 10 },
-                        ]}
-                    >
-                        Pinnit
-                    </Text>
+                    <View style={styles.headerTopRow}>
+                        <View>
+                            <Text
+                                style={[
+                                    styles.appLabel,
+                                    { color: colors.textSecondary },
+                                ]}
+                            >
+                                กระดานปักหมุดส่วนตัวของคุณ
+                            </Text>
+                            <Text
+                                style={[
+                                    styles.title,
+                                    { color: colors.textPrimary },
+                                ]}
+                            >
+                                Pinnit
+                            </Text>
+                        </View>
+                        <View style={styles.headerBadge}>
+                            <Ionicons
+                                name="pin-outline"
+                                size={14}
+                                color="#1D4ED8"
+                            />
+                            <Text style={styles.headerBadgeText}>
+                                จุดที่บันทึก
+                            </Text>
+                        </View>
+                    </View>
+
                     <Text
                         style={[
                             styles.subtitle,
                             { color: colors.textSecondary },
                         ]}
                     >
-                        Pin the places that matter. Come back to them anytime.
+                        ปักหมุดสถานที่สำคัญ แล้วกลับมาดูได้ด้วยการแตะเพียงครั้งเดียว
                     </Text>
                 </View>
 
@@ -294,7 +423,7 @@ export default function Index() {
                                             { marginLeft: 8 },
                                         ]}
                                     >
-                                        Getting location...
+                                        กำลังดึงตำแหน่ง...
                                     </Text>
                                 </View>
                             ) : currentLocation ? (
@@ -315,7 +444,7 @@ export default function Index() {
                                         { color: colors.textSecondary },
                                     ]}
                                 >
-                                    Location unavailable
+                                    ไม่สามารถดึงตำแหน่งได้
                                 </Text>
                             )}
                         </View>
@@ -337,7 +466,7 @@ export default function Index() {
                             color="#ffffff"
                         />
                         <Text style={styles.pinButtonLabel}>
-                            Pin Current Spot
+                            ปักหมุดตำแหน่งปัจจุบัน
                         </Text>
                     </TouchableOpacity>
                 </View>
@@ -351,7 +480,7 @@ export default function Index() {
                                 { color: colors.textPrimary },
                             ]}
                         >
-                            Saved Spots
+                            จุดที่บันทึก
                         </Text>
                         <Text
                             style={[
@@ -359,7 +488,7 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            {pins.length} location{pins.length !== 1 ? "s" : ""}
+                            {pins.length} ตำแหน่ง
                         </Text>
                     </View>
 
@@ -368,7 +497,16 @@ export default function Index() {
                             <ActivityIndicator size="large" color="#007AFF" />
                         </View>
                     ) : pins.length === 0 ? (
-                        <View style={styles.emptyContainer}>
+                        <ScrollView
+                            style={styles.emptyScroll}
+                            contentContainerStyle={styles.emptyContainer}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                />
+                            }
+                        >
                             <Ionicons
                                 name="location-outline"
                                 size={48}
@@ -380,7 +518,7 @@ export default function Index() {
                                     { color: colors.textSecondary },
                                 ]}
                             >
-                                No pinned locations yet
+                                ยังไม่มีตำแหน่งที่ปักหมุด
                             </Text>
                             <Text
                                 style={[
@@ -388,9 +526,18 @@ export default function Index() {
                                     { color: colors.textSecondary },
                                 ]}
                             >
-                                Pin your current location to get started
+                                ปักหมุดตำแหน่งปัจจุบันเพื่อเริ่มต้น
                             </Text>
-                        </View>
+                            <Text
+                                style={[
+                                    styles.emptySubtext,
+                                    { color: colors.textSecondary },
+                                    { marginTop: 16 },
+                                ]}
+                            >
+                                ลากลงเพื่อรีเฟรช
+                            </Text>
+                        </ScrollView>
                     ) : (
                         <FlatList
                             data={pins}
@@ -398,10 +545,17 @@ export default function Index() {
                             renderItem={renderItem}
                             contentContainerStyle={styles.listContent}
                             showsVerticalScrollIndicator={false}
+                            refreshControl={
+                                <RefreshControl
+                                    refreshing={refreshing}
+                                    onRefresh={onRefresh}
+                                />
+                            }
                         />
                     )}
                 </View>
             </View>
+            </TouchableWithoutFeedback>
 
             {/* Pin Name Modal */}
             <Modal
@@ -425,7 +579,7 @@ export default function Index() {
                                 { color: colors.textPrimary },
                             ]}
                         >
-                            Pin Location
+                            ปักหมุดตำแหน่ง
                         </Text>
                         <Text
                             style={[
@@ -433,7 +587,7 @@ export default function Index() {
                                 { color: colors.textSecondary },
                             ]}
                         >
-                            Enter a name for this location
+                            กรอกชื่อตำแหน่งนี้
                         </Text>
 
                         <View style={styles.inputContainer}>
@@ -449,7 +603,7 @@ export default function Index() {
                                             { color: colors.textSecondary },
                                         ]}
                                     >
-                                        Getting location name...
+                                        กำลังดึงชื่อตำแหน่ง...
                                     </Text>
                                 </View>
                             ) : (
@@ -466,7 +620,7 @@ export default function Index() {
                                                 : "#E5E7EB",
                                         },
                                     ]}
-                                    placeholder="Location Name"
+                                    placeholder="ชื่อตำแหน่ง"
                                     placeholderTextColor={colors.textSecondary}
                                     value={pinName}
                                     onChangeText={setPinName}
@@ -494,7 +648,7 @@ export default function Index() {
                                         { color: colors.textPrimary },
                                     ]}
                                 >
-                                    Cancel
+                                    ยกเลิก
                                 </Text>
                             </TouchableOpacity>
                             <TouchableOpacity
@@ -506,7 +660,100 @@ export default function Index() {
                                 disabled={isLoadingPinName}
                             >
                                 <Text style={styles.confirmButtonText}>
-                                    Pin
+                                    ปักหมุด
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Edit Pin Name Modal */}
+            <Modal
+                visible={isEditModalVisible}
+                transparent={true}
+                animationType="fade"
+                onRequestClose={handleCancelEditPin}
+            >
+                <View style={styles.modalOverlay}>
+                    <View
+                        style={[
+                            styles.modalContent,
+                            {
+                                backgroundColor: colors.card,
+                            },
+                        ]}
+                    >
+                        <Text
+                            style={[
+                                styles.modalTitle,
+                                { color: colors.textPrimary },
+                            ]}
+                        >
+                            แก้ไขชื่อตำแหน่ง
+                        </Text>
+                        <Text
+                            style={[
+                                styles.modalSubtitle,
+                                { color: colors.textSecondary },
+                            ]}
+                        >
+                            อัปเดตชื่อตำแหน่งที่บันทึก
+                        </Text>
+
+                        <View style={styles.inputContainer}>
+                            <TextInput
+                                style={[
+                                    styles.nameInput,
+                                    {
+                                        backgroundColor: isDark
+                                            ? "#1F2937"
+                                            : "#F9FAFB",
+                                        color: colors.textPrimary,
+                                        borderColor: isDark
+                                            ? "#374151"
+                                            : "#E5E7EB",
+                                    },
+                                ]}
+                                placeholder="ชื่อตำแหน่ง"
+                                placeholderTextColor={colors.textSecondary}
+                                value={editPinName}
+                                onChangeText={setEditPinName}
+                                autoFocus={true}
+                            />
+                        </View>
+
+                        <View style={styles.modalButtons}>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.cancelButton,
+                                    {
+                                        borderColor: isDark
+                                            ? "#374151"
+                                            : "#E5E7EB",
+                                    },
+                                ]}
+                                onPress={handleCancelEditPin}
+                            >
+                                <Text
+                                    style={[
+                                        styles.cancelButtonText,
+                                        { color: colors.textPrimary },
+                                    ]}
+                                >
+                                    ยกเลิก
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.modalButton,
+                                    styles.confirmButton,
+                                ]}
+                                onPress={handleConfirmEditPin}
+                            >
+                                <Text style={styles.confirmButtonText}>
+                                    บันทึก
                                 </Text>
                             </TouchableOpacity>
                         </View>
@@ -529,16 +776,44 @@ const styles = StyleSheet.create({
         paddingBottom: 16,
     },
     header: {
-        marginBottom: 16,
+        marginBottom: 20,
     },
     title: {
-        fontSize: 32,
+        fontSize: 34,
         fontWeight: "800",
         letterSpacing: -0.5,
     },
+    headerTopRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 12,
+    },
+    appLabel: {
+        fontSize: 11,
+        fontWeight: "600",
+        textTransform: "uppercase",
+        letterSpacing: 1.2,
+        marginBottom: 4,
+    },
+    headerBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 999,
+        backgroundColor: "#EEF2FF",
+        gap: 4,
+    },
+    headerBadgeText: {
+        fontSize: 11,
+        fontWeight: "600",
+        color: "#1D4ED8",
+    },
     subtitle: {
-        marginTop: 8,
-        fontSize: 14,
+        marginTop: 10,
+        fontSize: 13,
+        lineHeight: 18,
     },
     locationCard: {
         borderRadius: 24,
@@ -704,8 +979,11 @@ const styles = StyleSheet.create({
         alignItems: "center",
         paddingVertical: 40,
     },
-    emptyContainer: {
+    emptyScroll: {
         flex: 1,
+    },
+    emptyContainer: {
+        flexGrow: 1,
         justifyContent: "center",
         alignItems: "center",
         paddingVertical: 60,

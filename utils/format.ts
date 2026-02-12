@@ -9,17 +9,17 @@ export const formatTimeAgo = (timestamp: number): string => {
   const weeks = Math.floor(days / 7);
 
   if (seconds < 60) {
-    return "Pinned just now";
+    return "ปักหมุดเมื่อสักครู่";
   } else if (minutes < 60) {
-    return `Pinned ${minutes} min${minutes > 1 ? "s" : ""} ago`;
+    return `ปักหมุดเมื่อ ${minutes} นาทีที่แล้ว`;
   } else if (hours < 24) {
-    return `Pinned ${hours} hour${hours > 1 ? "s" : ""} ago`;
+    return `ปักหมุดเมื่อ ${hours} ชั่วโมงที่แล้ว`;
   } else if (days < 7) {
-    return `Pinned ${days} day${days > 1 ? "s" : ""} ago`;
+    return `ปักหมุดเมื่อ ${days} วันที่แล้ว`;
   } else if (weeks < 4) {
-    return `Pinned ${weeks} week${weeks > 1 ? "s" : ""} ago`;
+    return `ปักหมุดเมื่อ ${weeks} สัปดาห์ที่แล้ว`;
   } else {
     const date = new Date(timestamp);
-    return `Pinned on ${date.toLocaleDateString()}`;
+    return `ปักหมุดเมื่อ ${date.toLocaleDateString("th-TH")}`;
   }
 };

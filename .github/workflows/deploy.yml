@@ -1,0 +1,89 @@
+# CI/CD: Build and push Docker image on push to master.
+# Optional: Deploy to your server (set secrets to enable).
+name: Build and Deploy (master)
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/pinnitapp
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Deploy to server (optional): set SSH_HOST, SSH_USER, SSH_PRIVATE_KEY
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ vars.DEPLOY_ENABLED == 'true' || github.event.inputs.deploy == 'true' }}
+    environment: production
+
+    steps:
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          envs: REGISTRY_TOKEN,GEOCODE_API_KEY,GEOCODE_API_URL,SUPABASE_URL,SUPABASE_ANON_KEY
+          script: |
+            set -e
+            if [ -n "$REGISTRY_TOKEN" ]; then
+              echo "$REGISTRY_TOKEN" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            fi
+            docker pull ${{ env.REGISTRY }}/${{ github.repository_owner }}/pinnitapp:latest
+            docker stop pinnitapp 2>/dev/null || true
+            docker rm pinnitapp 2>/dev/null || true
+            docker run -d --name pinnitapp --restart unless-stopped \
+              -e GEOCODE_API_KEY="$GEOCODE_API_KEY" \
+              -e GEOCODE_API_URL="$GEOCODE_API_URL" \
+              -e SUPABASE_URL="$SUPABASE_URL" \
+              -e SUPABASE_ANON_KEY="$SUPABASE_ANON_KEY" \
+              ${{ env.REGISTRY }}/${{ github.repository_owner }}/pinnitapp:latest
+            docker image prune -f
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GEOCODE_API_KEY: ${{ secrets.GEOCODE_API_KEY }}
+          GEOCODE_API_URL: ${{ secrets.GEOCODE_API_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

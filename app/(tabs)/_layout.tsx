@@ -35,7 +35,7 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="index"
                 options={{
-                    title: "Home",
+                    title: "หน้าแรก",
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons
                             name="home-outline"
@@ -48,7 +48,7 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="map"
                 options={{
-                    title: "Map",
+                    title: "แผนที่",
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons
                             name="map-outline"
@@ -61,7 +61,7 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="settings"
                 options={{
-                    title: "Settings",
+                    title: "ตั้งค่า",
                     tabBarIcon: ({ color, size }) => (
                         <Ionicons
                             name="settings-outline"

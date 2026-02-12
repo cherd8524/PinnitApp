@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Appearance,
+  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -10,17 +11,95 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
+import { Session } from "@supabase/supabase-js";
 import { SettingsRow } from "@/components/SettingsRow";
+import {
+  loadMapStyle,
+  saveMapStyle,
+  type MapStyleType,
+} from "@/utils/storage";
+import { supabase } from "@/lib/supabase";
+import { getLastSyncAt, getLocalOnlyPinsCount, mergeLocalPinsToSupabase, copyCacheToLocalOnLogout } from "@/utils/pinsSync";
+import { useNetworkStatus } from "@/utils/network";
 
 const DARK_MODE_KEY = "@pinnit_dark_mode";
+
+const MAP_STYLE_LABELS: Record<MapStyleType, string> = {
+  standard: "มาตรฐาน",
+  satellite: "ดาวเทียม",
+  hybrid: "ไฮบริด",
+  terrain: "ภูมิประเทศ",
+};
 
 export default function SettingsScreen() {
   const systemColorScheme = useColorScheme();
   const [darkMode, setDarkMode] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mapStyle, setMapStyle] = useState<MapStyleType>("standard");
+  const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+  const [showUserGuideModal, setShowUserGuideModal] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const router = useRouter();
+  const isOnline = useNetworkStatus();
+
+  // Auth session
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, s: Session | null) => setSession(s));
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  const displayName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.username ?? "ผู้ใช้";
+
+  useEffect(() => {
+    getLastSyncAt().then(setLastSyncAt);
+  }, [session]);
+
+  const handleBackupSync = async () => {
+    if (!session) {
+      Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่ออัปโหลดปักหมุดขึ้นบัญชี");
+      return;
+    }
+    if (!isOnline) {
+      Alert.alert("ออฟไลน์", "ขณะนี้ไม่มีเครือข่าย");
+      return;
+    }
+    const count = await getLocalOnlyPinsCount();
+    if (count === 0) {
+      Alert.alert("ไม่มีรายการที่ต้องนำขึ้นบัญชี", "ไม่มีข้อมูลในเครื่องที่ยังไม่อยู่ในบัญชี");
+      return;
+    }
+    setSyncLoading(true);
+    try {
+      await mergeLocalPinsToSupabase();
+      const t = await getLastSyncAt();
+      setLastSyncAt(t);
+      Alert.alert("สำเร็จ", "อัปโหลดปักหมุดขึ้นบัญชีแล้ว");
+    } catch (e) {
+      console.error("Merge sync error", e);
+      Alert.alert("ไม่สำเร็จ", "กรุณาลองอีกครั้ง");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  const backupSyncSubtitle =
+    !session
+      ? "ล็อกอินก่อนจึงจะนำรายการในเครื่องไปเก็บในบัญชีได้"
+      : !isOnline
+        ? "ไม่มีเน็ต — รายการที่ปักตอนเน็ตหลุดจะขึ้นบัญชีอัตโนมัติเมื่อกลับออนไลน์"
+        : "นำรายการในเครื่องไปเก็บในบัญชี";
 
   // Load saved preference on mount
   useEffect(() => {
@@ -45,6 +124,11 @@ export default function SettingsScreen() {
     })();
   }, [systemColorScheme]);
 
+  // Load map style on mount
+  useEffect(() => {
+    loadMapStyle().then(setMapStyle);
+  }, []);
+
   const isDark = darkMode ?? systemColorScheme === "dark";
 
   const colors = useMemo(
@@ -65,26 +149,19 @@ export default function SettingsScreen() {
       await AsyncStorage.setItem(DARK_MODE_KEY, value.toString());
     } catch (error) {
       console.error("Error saving dark mode preference:", error);
-      Alert.alert("Error", "Failed to save dark mode preference.");
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกการตั้งค่าโหมดมืดได้");
     }
   };
 
-  const handleClearAllData = () => {
-    Alert.alert(
-      "Clear All Data",
-      "Are you sure you want to permanently delete all pinned locations and settings?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            // TODO: integrate with storage clearing
-            Alert.alert("Done", "All data has been cleared.");
-          },
-        },
-      ]
-    );
+  const handleSelectMapStyle = async (style: MapStyleType) => {
+    try {
+      setMapStyle(style);
+      await saveMapStyle(style);
+      setShowMapStyleModal(false);
+    } catch (error) {
+      console.error("Error saving map style:", error);
+      Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกการตั้งค่าสไตล์แผนที่ได้");
+    }
   };
 
   return (
@@ -103,58 +180,64 @@ export default function SettingsScreen() {
               { marginTop: 10 }
             ]}
           >
-            Settings
+            ตั้งค่า
           </Text>
           <Text
             style={[styles.headerSubtitle, { color: colors.sectionLabel }]}
           >
-            Tune Pinnit to match how you move and pin.
+            ปรับแต่ง Pinnit ให้เหมาะกับการใช้งานของคุณ
           </Text>
         </View>
 
         <View style={styles.section}>
-          <Text
-            style={[styles.sectionLabel, { color: colors.sectionLabel }]}
-          >
-            Location
+          <Text style={[styles.sectionLabel, { color: colors.sectionLabel }]}>
+            บัญชี
           </Text>
           <View
             style={[
               styles.card,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
+              { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <SettingsRow
-              icon="location-outline"
-              label="Location Accuracy"
-              onPress={() => {
-                Alert.alert(
-                  "Location Accuracy",
-                  "High accuracy mode uses more battery but provides more precise location data."
-                );
-              }}
-              isDark={isDark}
-            />
-            <View
-              style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
-              ]}
-            />
-            <SettingsRow
-              icon="refresh-outline"
-              label="Update Interval"
-              onPress={() => {
-                Alert.alert(
-                  "Update Interval",
-                  "Configure how often your location is updated on the map."
-                );
-              }}
-              isDark={isDark}
-            />
+            {!session ? (
+              <TouchableOpacity
+                style={styles.accountRow}
+                onPress={() => router.navigate("/(auth)/login")}
+              >
+                <View style={styles.accountRowLeft}>
+                  <View style={styles.avatarPlaceholder}>
+                    <Ionicons name="person-outline" size={28} color="#007AFF" />
+                  </View>
+                  <View>
+                    <Text style={[styles.accountName, { color: colors.textPrimary }]}>
+                      ล็อกอิน
+                    </Text>
+                    <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
+                      ล็อกอินเพื่อซิงค์และสำรอง pins
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={22} color={colors.sectionLabel} />
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.accountRow}>
+                <View style={styles.accountRowLeft}>
+                  <View style={styles.avatarPlaceholder}>
+                    <Text style={styles.avatarInitial}>
+                      {displayName.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View>
+                    <Text style={[styles.accountName, { color: colors.textPrimary }]}>
+                      {displayName}
+                    </Text>
+                    <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
+                      {session.user?.user_metadata?.username ?? session.user?.email?.split("@")[0] ?? "ล็อกอินแล้ว"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -162,7 +245,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.sectionLabel }]}
           >
-            Map
+            แผนที่
           </Text>
           <View
             style={[
@@ -175,31 +258,10 @@ export default function SettingsScreen() {
           >
             <SettingsRow
               icon="map-outline"
-              label="Map Style"
-              onPress={() => {
-                Alert.alert(
-                  "Map Style",
-                  "Choose between standard, satellite, or terrain map views."
-                );
-              }}
+              label="สไตล์แผนที่"
+              onPress={() => setShowMapStyleModal(true)}
               isDark={isDark}
-            />
-            <View
-              style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
-              ]}
-            />
-            <SettingsRow
-              icon="resize-outline"
-              label="Default Zoom Level"
-              onPress={() => {
-                Alert.alert(
-                  "Default Zoom Level",
-                  "Set the default zoom level when opening the map."
-                );
-              }}
-              isDark={isDark}
+              subtitle={MAP_STYLE_LABELS[mapStyle]}
             />
           </View>
         </View>
@@ -208,7 +270,7 @@ export default function SettingsScreen() {
           <Text
             style={[styles.sectionLabel, { color: colors.sectionLabel }]}
           >
-            Preferences
+            การตั้งค่า
           </Text>
           <View
             style={[
@@ -238,7 +300,7 @@ export default function SettingsScreen() {
                       { color: colors.textPrimary },
                     ]}
                   >
-                    Dark Mode
+                    โหมดมืด
                   </Text>
                   <Text
                     style={[
@@ -246,7 +308,7 @@ export default function SettingsScreen() {
                       { color: colors.sectionLabel },
                     ]}
                   >
-                    Match your screen to the night.
+                    ปรับจอให้เข้ากับเวลากลางคืน
                   </Text>
                 </View>
               </View>
@@ -264,74 +326,59 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.section}>
-          <Text
-            style={[styles.sectionLabel, { color: colors.sectionLabel }]}
-          >
-            Data
-          </Text>
-          <View
-            style={[
-              styles.card,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-          >
-            <SettingsRow
-              icon="download-outline"
-              label="Export Pins"
-              onPress={() => {
-                Alert.alert(
-                  "Export Pins",
-                  "Export all your pinned locations as a JSON file."
-                );
-              }}
-              isDark={isDark}
-            />
+        {session ? (
+          <View style={styles.section}>
+            <Text
+              style={[styles.sectionLabel, { color: colors.sectionLabel }]}
+            >
+              ข้อมูล
+            </Text>
             <View
               style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+                styles.card,
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
               ]}
-            />
-            <SettingsRow
-              icon="cloud-upload-outline"
-              label="Import Pins"
-              onPress={() => {
-                Alert.alert(
-                  "Import Pins",
-                  "Import pinned locations from a JSON file."
-                );
-              }}
-              isDark={isDark}
-            />
-            <View
-              style={[
-                styles.cardDivider,
-                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
-              ]}
-            />
-            <SettingsRow
-              icon="cloud-done-outline"
-              label="Backup & Sync"
-              onPress={() => {
-                Alert.alert(
-                  "Backup & Sync",
-                  "Backup your pins to cloud storage or sync across devices."
-                );
-              }}
-              isDark={isDark}
-            />
+            >
+              <SettingsRow
+                icon="cloud-done-outline"
+                label="อัปโหลดปักหมุดขึ้นบัญชี"
+                subtitle={syncLoading ? "กำลังอัปโหลด..." : backupSyncSubtitle}
+                onPress={handleBackupSync}
+                isDark={isDark}
+              />
+              <View
+                style={[
+                  styles.cardDivider,
+                  { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+                ]}
+              />
+              <SettingsRow
+                icon="save-outline"
+                label="ดาวน์โหลดปักหมุดลงเครื่อง"
+                subtitle="เก็บสำเนารายการในบัญชีไว้ในเครื่อง"
+                onPress={async () => {
+                  try {
+                    await copyCacheToLocalOnLogout();
+                    Alert.alert("บันทึกแล้ว", "ดาวน์โหลดปักหมุดลงเครื่องแล้ว");
+                  } catch (e) {
+                    console.error("Copy to local error", e);
+                    Alert.alert("บันทึกไม่สำเร็จ", "กรุณาลองอีกครั้ง");
+                  }
+                }}
+                isDark={isDark}
+              />
+            </View>
           </View>
-        </View>
+        ) : null}
 
         <View style={styles.section}>
           <Text
             style={[styles.sectionLabel, { color: colors.sectionLabel }]}
           >
-            About
+            เกี่ยวกับ
           </Text>
           <View
             style={[
@@ -343,12 +390,24 @@ export default function SettingsScreen() {
             ]}
           >
             <SettingsRow
+              icon="book-outline"
+              label="คู่มือการใช้งาน"
+              onPress={() => setShowUserGuideModal(true)}
+              isDark={isDark}
+            />
+            <View
+              style={[
+                styles.cardDivider,
+                { backgroundColor: isDark ? "#374151" : "#E5E7EB" },
+              ]}
+            />
+            <SettingsRow
               icon="information-circle-outline"
-              label="About Pinnit"
+              label="เกี่ยวกับ Pinnit"
               onPress={() => {
                 Alert.alert(
-                  "About Pinnit",
-                  "Pinnit v1.0.0\n\nA simple and elegant location pinning app.\n\nMade with ❤️ for keeping track of your favorite places.\n\n━━━━━━━━━━━━━━━━━━━━\n\nDeveloper Information:\n\nDeveloped by: CS-VRU67/2-68\nCourse: SCS337\nProject: PinnitApp\n\nThis app was created as part of a course project to demonstrate location-based features and modern mobile app development."
+                  "เกี่ยวกับ Pinnit App",
+                  "Pinnit v1.0.0\n\nแอปปักหมุดตำแหน่งที่เรียบง่ายและสวยงาม\n\nสร้างด้วย ❤️ เพื่อติดตามสถานที่โปรดของคุณ\n\n━━━━━━━━━━━━━━━━━━━━\n\nข้อมูลนักพัฒนา:\n\nพัฒนาโดย: Cherdsak Kh.\nหลักสูตร: SCS337\nโปรเจกต์: PinnitApp\n\nแอปนี้สร้างขึ้นเป็นส่วนหนึ่งของโปรเจกต์หลักสูตร เพื่อสาธิตฟีเจอร์เกี่ยวกับตำแหน่งและการพัฒนาแอปมือถือสมัยใหม่"
                 );
               }}
               isDark={isDark}
@@ -361,11 +420,14 @@ export default function SettingsScreen() {
             />
             <SettingsRow
               icon="shield-checkmark-outline"
-              label="Privacy Policy"
+              label="นโยบายความเป็นส่วนตัว"
               onPress={() => {
                 Alert.alert(
-                  "Privacy Policy",
-                  "Your location data is stored locally on your device. We do not collect or share any personal information."
+                  "นโยบายความเป็นส่วนตัว",
+                  "• ข้อมูลที่เก็บ: ตำแหน่งที่ปักหมุด ชื่อบัญชี เก็บในอุปกรณ์และบนเซิร์ฟเวอร์เมื่อคุณล็อกอิน\n\n" +
+                  "• การใช้ข้อมูล: ใช้เพื่อให้บริการแอป ซิงค์และสำรอง pins ของคุณ ไม่ขายหรือแชร์ข้อมูลให้บุคคลที่สาม\n\n" +
+                  "• ความปลอดภัย: การเชื่อมต่อใช้ HTTPS ข้อมูลบัญชีอยู่ภายใต้ Supabase Auth\n\n" +
+                  "• การตั้งค่า (โหมดมืด, สไตล์แผนที่): เก็บเฉพาะในอุปกรณ์ ไม่ส่งขึ้นเซิร์ฟเวอร์"
                 );
               }}
               isDark={isDark}
@@ -378,11 +440,14 @@ export default function SettingsScreen() {
             />
             <SettingsRow
               icon="document-text-outline"
-              label="Terms of Service"
+              label="เงื่อนไขการให้บริการ"
               onPress={() => {
                 Alert.alert(
-                  "Terms of Service",
-                  "By using Pinnit, you agree to use the app responsibly and respect location privacy."
+                  "เงื่อนไขการให้บริการ",
+                  "• การใช้งาน: คุณใช้ Pinnit เพื่อบันทึกและจัดการตำแหน่งที่ปักหมุดส่วนตัว\n\n" +
+                  "• ข้อห้าม: ไม่อนุญาตให้ใช้แอปเพื่อละเมิดกฎหมาย หรือเก็บข้อมูลตำแหน่งของผู้อื่นโดยไม่ยินยอม\n\n" +
+                  "• บริการ: เราให้บริการ \"ตามสภาพ\" การซิงค์ขึ้นอยู่กับเครือข่ายและเซิร์ฟเวอร์\n\n" +
+                  "• การเปลี่ยนแปลง: เราอาจอัปเดตเงื่อนไขนี้ได้ โดยการใช้งานต่อถือว่าคุณยอมรับ"
                 );
               }}
               isDark={isDark}
@@ -390,37 +455,22 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        <View style={styles.dangerSection}>
-          <Text style={styles.dangerLabel}>Danger Zone</Text>
-          <TouchableOpacity
-            onPress={handleClearAllData}
-            activeOpacity={0.85}
-            style={styles.dangerCard}
-          >
-            <View style={styles.dangerLeft}>
-              <View style={styles.dangerIconWrapper}>
-                <MaterialCommunityIcons
-                  name="trash-can-outline"
-                  size={20}
-                  color="#EF4444"
-                />
-              </View>
-              <View style={styles.dangerTextColumn}>
-                <Text style={styles.dangerTitle}>
-                  Clear All Data
-                </Text>
-                <Text style={styles.dangerSubtitle}>
-                  This cannot be undone.
-                </Text>
-              </View>
-            </View>
-            <MaterialCommunityIcons
-              name="chevron-right"
-              size={22}
-              color="#FCA5A5"
-            />
-          </TouchableOpacity>
-        </View>
+        {session ? (
+          <View style={[styles.section, { marginTop: 32 }]}>
+            <TouchableOpacity
+              style={[styles.logoutButton, { borderColor: colors.border }]}
+              onPress={() => {
+                Alert.alert("ออกจากระบบ", "ต้องการออกจากระบบหรือไม่?", [
+                  { text: "ยกเลิก", style: "cancel" },
+                  { text: "ออกจากระบบ", style: "destructive", onPress: () => handleLogout() },
+                ]);
+              }}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#DC2626" />
+              <Text style={styles.logoutText}>ออกจากระบบ</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -428,6 +478,167 @@ export default function SettingsScreen() {
           </Text>
         </View>
       </ScrollView>
+
+      {/* User Guide Modal */}
+      <Modal
+        visible={showUserGuideModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowUserGuideModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowUserGuideModal(false)}
+        >
+          <TouchableOpacity
+            style={[
+              styles.userGuideModalContent,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            activeOpacity={1}
+            onPress={() => {}}
+          >
+            <Text style={[styles.mapStyleModalTitle, { color: colors.textPrimary }]}>
+              คู่มือการใช้งาน
+            </Text>
+            <ScrollView
+              style={styles.userGuideScroll}
+              showsVerticalScrollIndicator={true}
+            >
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                คู่มือนี้แนะนำวิธีใช้งานแอปและฟีเจอร์ต่างๆ ของ Pinnit เพื่อให้คุณใช้แอปได้อย่างเต็มประสิทธิภาพ
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                ฟีเจอร์แท็บรายการ
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • กดปุ่ม + เพื่อเพิ่มตำแหน่งปัจจุบันลงรายการ
+                {"\n"}• กดที่รายการเพื่อดูตำแหน่งบนแผนที่
+                {"\n"}• กดค้างเพื่อแก้ไขชื่อหรือตำแหน่ง
+                {"\n"}• ปัดซ้ายเพื่อลบรายการ
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                ฟีเจอร์แผนที่
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • แสดง markers ของตำแหน่งที่บันทึกทั้งหมด
+                {"\n"}• กดที่ตำแหน่งบนแผนที่เพื่อปักหมุดใหม่
+                {"\n"}• เลือกสไตล์แผนที่ได้จากเมนูตั้งค่า
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                ฟีเจอร์บัญชีและซิงค์
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud
+                {"\n"}• เมื่อออฟไลน์ ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
+                {"\n"}• อัปโหลดปักหมุดขึ้นบัญชี: นำปักหมุดในเครื่องขึ้นบัญชี
+                {"\n"}• ดาวน์โหลดปักหมุดลงเครื่อง: ดึงปักหมุดจากบัญชีลงเครื่อง
+              </Text>
+              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
+                ฟีเจอร์ตั้งค่า
+              </Text>
+              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
+                • สไตล์แผนที่: มาตรฐาน / ดาวเทียม / ไฮบริด / ภูมิประเทศ
+                {"\n"}• โหมดมืด: ปรับจอให้เหมาะกับเวลากลางคืน
+              </Text>
+            </ScrollView>
+            <TouchableOpacity
+              style={[styles.modalCloseButton, { borderColor: colors.border }]}
+              onPress={() => setShowUserGuideModal(false)}
+            >
+              <Text style={[styles.modalCloseText, { color: colors.sectionLabel }]}>
+                ปิด
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Map Style Selection Modal */}
+      <Modal
+        visible={showMapStyleModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowMapStyleModal(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMapStyleModal(false)}
+        >
+          <TouchableOpacity
+            style={[
+              styles.mapStyleModalContent,
+              {
+                backgroundColor: colors.card,
+                borderColor: colors.border,
+              },
+            ]}
+            activeOpacity={1}
+            onPress={() => { }}
+          >
+            <Text
+              style={[
+                styles.mapStyleModalTitle,
+                { color: colors.textPrimary },
+              ]}
+            >
+              สไตล์แผนที่
+            </Text>
+            <Text
+              style={[
+                styles.mapStyleModalSubtitle,
+                { color: colors.sectionLabel },
+              ]}
+            >
+              เลือกการแสดงผลแผนที่
+            </Text>
+            {(Object.keys(MAP_STYLE_LABELS) as MapStyleType[]).map((style) => (
+              <TouchableOpacity
+                key={style}
+                style={[
+                  styles.mapStyleOption,
+                  {
+                    borderBottomColor: colors.border,
+                  },
+                ]}
+                onPress={() => handleSelectMapStyle(style)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[
+                    styles.mapStyleOptionLabel,
+                    { color: colors.textPrimary },
+                  ]}
+                >
+                  {MAP_STYLE_LABELS[style]}
+                </Text>
+                {mapStyle === style && (
+                  <Ionicons name="checkmark-circle" size={22} color="#007AFF" />
+                )}
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity
+              style={styles.mapStyleCancelButton}
+              onPress={() => setShowMapStyleModal(false)}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.mapStyleCancelText,
+                  { color: colors.sectionLabel },
+                ]}
+              >
+                ยกเลิก
+              </Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -473,6 +684,55 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
+  accountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  accountRowLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  avatarPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#DBEAFE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarInitial: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#1D4ED8",
+  },
+  accountName: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  accountSub: {
+    fontSize: 13,
+    marginTop: 2,
+  },
+  logoutButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderRadius: 12,
+  },
+  logoutText: {
+    fontSize: 15,
+    color: "#DC2626",
+    fontWeight: "500",
+  },
   cardDivider: {
     height: 1,
     opacity: 0.7,
@@ -508,60 +768,83 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
   },
-  dangerSection: {
-    marginTop: 32,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
   },
-  dangerLabel: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-    fontSize: 11,
-    fontWeight: "600",
-    letterSpacing: 1.2,
-    textTransform: "uppercase",
-    color: "#EF4444",
-  },
-  dangerCard: {
-    marginHorizontal: 16,
-    borderRadius: 18,
-    backgroundColor: "#FEF2F2",
+  mapStyleModalContent: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 20,
+    padding: 20,
     borderWidth: 1,
-    borderColor: "#FECACA",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+  },
+  userGuideModalContent: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "80%",
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+  },
+  userGuideScroll: {
+    maxHeight: 400,
+    marginVertical: 12,
+  },
+  userGuideSection: {
+    fontSize: 15,
+    fontWeight: "600",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  userGuideText: {
+    fontSize: 14,
+    lineHeight: 22,
+    marginBottom: 4,
+  },
+  modalCloseButton: {
+    alignSelf: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  modalCloseText: {
+    fontSize: 15,
+    fontWeight: "500",
+  },
+  mapStyleModalTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    marginBottom: 4,
+  },
+  mapStyleModalSubtitle: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+  mapStyleOption: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    shadowColor: "#F87171",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 3,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
   },
-  dangerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  dangerIconWrapper: {
-    height: 36,
-    width: 36,
-    borderRadius: 18,
-    backgroundColor: "#FEE2E2",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dangerTextColumn: {
-    flexDirection: "column",
-  },
-  dangerTitle: {
+  mapStyleOptionLabel: {
     fontSize: 16,
-    fontWeight: "600",
-    color: "#DC2626",
+    fontWeight: "500",
   },
-  dangerSubtitle: {
-    marginTop: 4,
-    fontSize: 12,
-    color: "#B91C1C",
+  mapStyleCancelButton: {
+    marginTop: 12,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  mapStyleCancelText: {
+    fontSize: 16,
+    fontWeight: "500",
   },
   footer: {
     marginTop: 32,
