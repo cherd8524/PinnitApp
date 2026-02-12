@@ -54,7 +54,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: ${{ vars.DEPLOY_ENABLED == 'true' || github.event.inputs.deploy == 'true' }}
+    # Run deploy job whenever repo variable DEPLOY_ENABLED is set (any value)
+    if: ${{ vars.DEPLOY_ENABLED != '' }}
     environment: production
 
     steps:
