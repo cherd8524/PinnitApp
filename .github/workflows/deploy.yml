@@ -54,8 +54,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    # Run deploy job whenever repo variable DEPLOY_ENABLED is set (any value)
-    if: ${{ vars.DEPLOY_ENABLED != '' }}
+    # NOTE: deploy job always runs after build; if you want to disable deploy temporarily,
+    # add a condition here or disable the workflow run in GitHub UI.
     environment: production
 
     steps:
