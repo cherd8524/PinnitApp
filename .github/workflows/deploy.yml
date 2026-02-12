@@ -65,25 +65,4 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
-            powershell -Command "& {
-              $ErrorActionPreference = 'Stop'
-
-              $registryToken = '${{ secrets.GHCR_TOKEN }}'
-              if ($registryToken -ne '') {
-                $registryToken | docker login ghcr.io -u '${{ github.actor }}' --password-stdin
-              }
-
-              docker pull ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
-
-              docker stop pinnitapp 2>$null | Out-Null
-              docker rm pinnitapp 2>$null | Out-Null
-
-              docker run -d --name pinnitapp --restart unless-stopped `
-                -e GEOCODE_API_KEY='${{ secrets.GEOCODE_API_KEY }}' `
-                -e GEOCODE_API_URL='${{ secrets.GEOCODE_API_URL }}' `
-                -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' `
-                -e SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY }}' `
-                ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
-
-              docker image prune -f
-            }"
+            powershell -Command "$ErrorActionPreference = 'Stop'; $registryToken = '${{ secrets.GHCR_TOKEN }}'; if ($registryToken -ne '') { $registryToken | docker login ghcr.io -u '${{ github.actor }}' --password-stdin }; docker pull ghcr.io/${{ github.repository_owner }}/pinnitapp:latest; docker stop pinnitapp 2>$null | Out-Null; docker rm pinnitapp 2>$null | Out-Null; docker run -d --name pinnitapp --restart unless-stopped -e GEOCODE_API_KEY='${{ secrets.GEOCODE_API_KEY }}' -e GEOCODE_API_URL='${{ secrets.GEOCODE_API_URL }}' -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' -e SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY }}' ghcr.io/${{ github.repository_owner }}/pinnitapp:latest; docker image prune -f"
