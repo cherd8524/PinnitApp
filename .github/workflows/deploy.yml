@@ -55,16 +55,14 @@ jobs:
     steps:
       - name: Pull latest image and restart container
         shell: pwsh
+        env:
+          GEOCODE_API_KEY: ${{ secrets.GEOCODE_API_KEY }}
+          GEOCODE_API_URL: ${{ secrets.GEOCODE_API_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           $dockerPaths = @('C:\Program Files\Docker\Docker\resources\bin', 'C:\ProgramData\DockerDesktop\version-bin')
           foreach ($p in $dockerPaths) { if (Test-Path $p) { $env:Path = "$p;$env:Path"; break } }
           docker pull ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
           docker stop pinnitapp 2>$null; docker rm pinnitapp 2>$null
-          docker run -d --name pinnitapp --restart unless-stopped -e GEOCODE_API_KEY='${{ secrets.GEOCODE_API_KEY }}' -e GEOCODE_API_URL='${{ secrets.GEOCODE_API_URL }}' -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' -e SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY }}' ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
-
-      - name: Pull latest image and restart container
-        shell: pwsh
-        run: |
-          docker pull ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
-          docker stop pinnitapp 2>$null; docker rm pinnitapp 2>$null
-          docker run -d --name pinnitapp --restart unless-stopped -e GEOCODE_API_KEY='${{ secrets.GEOCODE_API_KEY }}' -e GEOCODE_API_URL='${{ secrets.GEOCODE_API_URL }}' -e SUPABASE_URL='${{ secrets.SUPABASE_URL }}' -e SUPABASE_ANON_KEY='${{ secrets.SUPABASE_ANON_KEY }}' ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
+          docker run -d --name pinnitapp --restart unless-stopped -e GEOCODE_API_KEY="$env:GEOCODE_API_KEY" -e GEOCODE_API_URL="$env:GEOCODE_API_URL" -e SUPABASE_URL="$env:SUPABASE_URL" -e SUPABASE_ANON_KEY="$env:SUPABASE_ANON_KEY" ghcr.io/${{ github.repository_owner }}/pinnitapp:latest
