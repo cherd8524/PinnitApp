@@ -1,4 +1,4 @@
-# PinnitApp - Expo dev server with tunnel for Expo Go (view from anywhere)
+# PinnitApp - Expo dev server for Expo Go (LAN/public IP access)
 FROM node:20-alpine
 
 WORKDIR /app
@@ -10,12 +10,12 @@ RUN npm ci
 # Copy app source
 COPY . .
 
-# Metro bundler default port; tunnel creates public URL for Expo Go
-EXPOSE 8081
+# Metro / Expo ports (LAN/public IP access)
+EXPOSE 8081 19000 19001
 
-# Non-interactive for CI/Docker; tunnel gives public URL for Expo Go
+# Non-interactive for CI/Docker
 ENV CI=1
 ENV EXPO_DEVTOOLS_LISTEN_ADDRESS=0.0.0.0
 
-# Run Expo with tunnel so anyone can open in Expo Go via QR/URL
-CMD ["npx", "expo", "start", "--tunnel"]
+# Run Expo in LAN mode; use server IP in Expo Go
+CMD ["npx", "expo", "start", "--lan"]
