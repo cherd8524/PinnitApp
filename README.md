@@ -1,319 +1,271 @@
 # 📍 Pinnit App
 
-A simple and elegant location pinning app built with React Native and Expo. Pin your favorite places and come back to them anytime.
+แอปบันทึกตำแหน่งที่ชอบ — บันทึกจุดบนแผนที่ ดูและจัดการ pins ได้ง่าย  
+สร้างด้วย **React Native** และ **Expo** ใช้ได้โดยไม่ต้องล็อกอิน (ข้อมูลเก็บในเครื่อง) หรือล็อกอินเพื่อซิงค์ pins กับ **Supabase** และใช้ร่วมกันข้ามอุปกรณ์ได้
 
-## 📱 About Pinnit
+---
 
-Pinnit is a mobile application that allows users to:
-- **Pin Current Location**: Save your current location with a custom name
-- **View on Map**: See all your pinned locations on an interactive map
-- **Swipe to Delete**: Easily remove saved locations with a swipe gesture
-- **Dark Mode Support**: Toggle between light and dark themes
-- **Persistent Storage**: All your pinned locations are saved locally on your device
+## สารบัญ / Table of Contents
 
-### Features
+- [เกี่ยวกับ / About](#-เกี่ยวกับ--about)
+- [ฟีเจอร์ / Features](#-ฟีเจอร์--features)
+- [เริ่มต้นใช้งาน / Getting Started](#-getting-started)
+- [สคริปต์ / Scripts](#-available-scripts)
+- [โครงสร้างโปรเจกต์ / Project Structure](#-project-structure)
+- [เทคโนโลยี / Tech Stack](#-technology-stack)
+- [การใช้งาน / Usage](#-usage-guide)
+- [การตั้งค่า / Configuration](#-configuration)
+- [หน้าจอแอป / App Screens](#-app-screens)
+- [สิทธิ์แอป / Permissions](#-permissions)
+- [แก้ปัญหา / Troubleshooting](#-troubleshooting)
+- [เอกสารเทคนิค / Tech Docs](#-เอกสารเทคนิค--tech-documentation)
+- [ผู้พัฒนา / Credits](#-developer-information)
 
-- 🗺️ Interactive map with real-time location tracking
-- 📌 Pin locations by tapping on the map or using current location
-- 🗑️ Swipe-to-delete functionality for saved locations
-- 🌙 Dark mode support with persistent preference
-- 📱 Cross-platform support (iOS, Android, Web)
-- 🔄 Real-time location updates
-- 🎨 Modern and clean UI design
+---
+
+## 📱 เกี่ยวกับ / About
+
+**Pinnit** เป็นแอปมือถือที่ให้คุณบันทึกตำแหน่งสำคัญและจัดการได้จากที่เดียว
+
+- **ใช้โดยไม่ล็อกอิน** — ข้อมูล pins เก็บในเครื่อง (AsyncStorage) เท่านั้น
+- **ใช้พร้อมล็อกอิน** — ข้อมูล sync กับ Supabase ได้ อัปโหลด/ดาวน์โหลด pins ระหว่างบัญชีกับเครื่อง
+
+Pinnit lets you:
+
+- **Pin ตำแหน่งปัจจุบัน** — บันทึกพิกัดพร้อมชื่อจาก reverse geocoding (หรือตั้งชื่อเอง)
+- **ดูบนแผนที่** — ดู pins ทั้งหมดบนแผนที่ (react-native-maps)
+- **แก้ไขชื่อ** — กดค้างที่รายการเพื่อแก้ชื่อ pin (เฉพาะ pin ที่เป็นเจ้าของ)
+- **ปัดเพื่อลบ** — ลบ pin ด้วยการปัด (swipe); pin ที่ไม่ใช่เจ้าของแสดงแบบอ่านอย่างเดียว
+- **โหมดมืด & สไตล์แผนที่** — เก็บค่าการตั้งค่าในเครื่อง
+- **ซิงค์กับ Cloud** — ล็อกอินด้วย username; อัปโหลด pins จากเครื่องขึ้นบัญชี หรือดาวน์โหลดจากบัญชีลงเครื่อง (ตั้งค่าใน Settings)
+
+---
+
+## ✨ ฟีเจอร์ / Features
+
+| ฟีเจอร์ | รายละเอียด |
+|--------|-------------|
+| 🗺️ แผนที่ | แผนที่อินเทอร์แอคทีฟ (react-native-maps) + ติดตามตำแหน่ง (expo-location) |
+| 📌 Pin ตำแหน่ง | แตะบนแผนที่หรือปุ่ม + ในหน้า Home; reverse geocoding หาชื่อสถานที่ |
+| ✏️ แก้ไขชื่อ | กดค้างที่รายการ pin เพื่อแก้ชื่อ (เฉพาะ pin ที่เป็นเจ้าของ) |
+| 🗑️ ลบแบบปัด | ปัดที่รายการเพื่อลบ; pin จาก cloud ที่ไม่ใช่เจ้าของเป็น read-only |
+| 👤 ล็อกอิน/สมัคร | หน้า Login & Sign-up (app/(auth)); ล็อกอินด้วย username → sync กับ Supabase |
+| ☁️ ซิงค์บัญชี | อัปโหลด pins จากเครื่องขึ้นบัญชี / ดาวน์โหลด pins จากบัญชีลงเครื่อง (Settings) |
+| 🌙 โหมดมืด | เปิด/ปิดโหมดมืด และจำค่าที่เลือก (AsyncStorage) |
+| 📱 หลายแพลตฟอร์ม | iOS, Android, Web |
+| 🎨 UI | ดีไซน์เรียบง่าย; รายการ pins ใช้ FlatList (virtualization) |
+
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 
-Before you begin, ensure you have the following installed:
-
-- **Node.js** (v18 or higher)
-- **npm** or **yarn**
-- **Expo CLI** (will be installed globally or via npx)
+- **Node.js** (v18 ขึ้นไป)
+- **npm** หรือ **yarn**
+- **Expo** (ใช้ผ่าน `npx` ได้)
 - **Git**
 
-For mobile development:
-- **iOS**: Xcode (for iOS Simulator) or Expo Go app
-- **Android**: Android Studio (for Android Emulator) or Expo Go app
+สำหรับรันบนมือถือ/จำลอง:
 
-### Clone the Repository
+- **iOS**: Xcode (Simulator) หรือแอป **Expo Go**
+- **Android**: Android Studio (Emulator) หรือแอป **Expo Go**
+
+### Clone & Install
 
 ```bash
-# Clone the repository
 git clone <repository-url>
-
-# Navigate to the project directory
 cd PinnitApp
+npm install
 ```
 
-### Installation
+### Environment Variables
 
-1. **Install dependencies**
+สร้างไฟล์ `.env` ที่โฟลเดอร์ราก (คัดจาก `.env.example`):
 
-   ```bash
-   npm install
-   ```
+```bash
+cp .env.example .env
+```
 
-2. **Set up environment variables**
+แก้ไข `.env` และใส่ค่าที่จำเป็น:
 
-   Create a `.env` file in the root directory:
+```env
+# Geocoding (reverse: พิกัด → ชื่อสถานที่)
+GEOCODE_API_KEY=your_api_key_here
+GEOCODE_API_URL=https://geocode.maps.co/reverse
+STORAGE_KEY=@pinnit_saved_pins
 
-   ```bash
-   cp .env.example .env
-   ```
+# Supabase (Auth + ฐานข้อมูล pins) — สร้างโปรเจกต์ที่ https://supabase.com
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your_anon_key_here
+```
 
-   Edit `.env` and add your API keys:
+> 🔑 Geocoding API: [geocode.maps.co](https://geocode.maps.co/) · Supabase: [supabase.com](https://supabase.com)
 
-   ```env
-   GEOCODE_API_KEY=your_api_key_here
-   GEOCODE_API_URL=https://geocode.maps.co/reverse
-   STORAGE_KEY=@pinnit_saved_pins
-   ```
-
-   > **Note**: Get your API key from [geocode.maps.co](https://geocode.maps.co/)
+---
 
 ## 📋 Available Scripts
 
-### Development
+| คำสั่ง | คำอธิบาย |
+|--------|----------|
+| `npm start` | เปิด Expo dev server |
+| `npm run start:ios` | เปิดพร้อมรันบน iOS (localhost) |
+| `npm run android` | รันบน Android emulator/device |
+| `npm run ios` | รันบน iOS simulator |
+| `npm run web` | รันเวอร์ชันเว็บ |
+| `npm run lint` | ตรวจโค้ดด้วย ESLint |
+| `npm run reset-project` | รีเซ็ตโปรเจกต์ (ย้าย starter code ไป `app-example`) |
 
-```bash
-# Start the Expo development server
-npm start
-# or
-npx expo start
-
-# Start with specific platform
-npm run android    # Start on Android emulator/device
-npm run ios        # Start on iOS simulator/device
-npm run web        # Start web version
-```
-
-### Code Quality
-
-```bash
-# Run ESLint to check code quality
-npm run lint
-```
-
-### Project Management
-
-```bash
-# Reset project (moves starter code to app-example)
-npm run reset-project
-```
+---
 
 ## 🏗️ Project Structure
 
 ```
 PinnitApp/
-├── app/                    # Main application code
-│   ├── _layout.tsx         # Root layout with Stack navigator
-│   └── (tabs)/             # Tab navigation screens
-│       ├── _layout.tsx     # Tab layout configuration
-│       ├── index.tsx       # Home screen (pinned locations list)
-│       ├── map.tsx         # Map screen with location pins
-│       └── settings.tsx    # Settings screen
-├── components/             # Reusable components
-│   ├── PinItem.tsx        # Pin item component with swipe-to-delete
-│   └── SettingsRow.tsx    # Settings row component
-├── types/                  # TypeScript type definitions
-│   └── pinnit.ts          # PinnitItem type
-├── utils/                  # Utility functions
-│   ├── storage.ts         # AsyncStorage operations
-│   ├── geocoding.ts       # Reverse geocoding API
-│   └── format.ts          # Time formatting utilities
-├── assets/                 # Images and static assets
-├── .env                    # Environment variables (not in git)
-├── .env.example           # Environment variables template
-├── babel.config.js        # Babel configuration
-├── tsconfig.json          # TypeScript configuration
-├── package.json           # Project dependencies
-└── README.md              # This file
+├── app/                      # หน้าจอและ routing (Expo Router, file-based)
+│   ├── _layout.tsx           # Root Stack layout
+│   ├── index.tsx             # Redirect ไป /(tabs)
+│   ├── (tabs)/               # Bottom tabs
+│   │   ├── _layout.tsx       # Tab layout
+│   │   ├── index.tsx         # Home — รายการ pins (local + Supabase)
+│   │   ├── map.tsx           # แผนที่ + markers
+│   │   └── settings.tsx      # ตั้งค่า, ล็อกอิน/สมัคร, อัปโหลด/ดาวน์โหลด pins
+│   └── (auth)/               # กลุ่มหน้าจอ Auth (ไม่มี tabs)
+│       ├── login.tsx         # เข้าสู่ระบบ (username → email @pinnit.local)
+│       └── sign-up.tsx       # สมัครสมาชิก
+├── lib/
+│   └── supabase.ts           # Supabase client (Auth + DB)
+├── components/
+│   ├── PinItem.tsx           # รายการ pin; swipe-to-delete, long-press แก้ชื่อ, read-only
+│   └── SettingsRow.tsx       # แถวตั้งค่า
+├── types/
+│   └── pinnit.ts             # PinnitItem และ types ที่เกี่ยวข้อง
+├── utils/
+│   ├── storage.ts            # AsyncStorage (pins, settings, cache, pending sync)
+│   ├── pinsSync.ts           # โหลด/บันทึก/ซิงค์ ระหว่าง local กับ Supabase
+│   ├── geocoding.ts          # getLocationName(lat, lon) — reverse geocoding (fetch)
+│   └── format.ts             # จัดรูปแบบเวลา
+├── docs/
+│   └── TECH_STACK_DOCUMENTATION.md   # รายงานเทคนิคฉบับเต็ม
+├── assets/
+├── .env.example / .env
+├── babel.config.js, tsconfig.json, package.json
+└── README.md
 ```
+
+---
 
 ## 🛠️ Technology Stack
 
-### Core Technologies
+| หมวด | เทคโนโลยี |
+|------|-----------|
+| Framework | React Native 0.81, Expo ~54 |
+| Language | TypeScript 5.9 |
+| Routing | Expo Router ~6 (file-based), React Navigation (Stack + Bottom Tabs) |
+| แผนที่ | react-native-maps (MapView, Marker, Region) |
+| ตำแหน่ง | expo-location (getCurrentPositionAsync, watchPositionAsync, permissions) |
+| เก็บข้อมูลในเครื่อง | @react-native-async-storage/async-storage (pins, settings, cache, sync state) |
+| Backend & DB | Supabase (@supabase/supabase-js) — Auth + ตาราง `pins`, RLS |
+| ดึงข้อมูล | fetch (geocoding API), Supabase SDK (select/insert/update/delete) |
+| รายการ | FlatList (virtualization, keyExtractor, renderItem → PinItem) |
+| Env | react-native-dotenv (GEOCODE_*, STORAGE_KEY, SUPABASE_*) |
+| ไอคอน | @expo/vector-icons (Ionicons) |
 
-- **React Native** (0.81.5) - Mobile app framework
-- **Expo** (~54.0.33) - Development platform
-- **TypeScript** (5.9.2) - Type safety
-- **Expo Router** (~6.0.23) - File-based routing
-
-### Key Libraries
-
-- **react-native-maps** (1.20.1) - Map display and markers
-- **expo-location** (~19.0.8) - GPS and location services
-- **@react-native-async-storage/async-storage** (2.2.0) - Local data persistence
-- **react-native-dotenv** (^3.4.11) - Environment variables
-- **@expo/vector-icons** (^15.0.3) - Icon library
+---
 
 ## 📖 Usage Guide
 
-### Running the App
+### รันแอป
 
-1. **Start the development server**
-
+1. เปิด dev server:
    ```bash
    npm start
    ```
+2. เลือกแพลตฟอร์ม:
+   - กด `a` = Android  
+   - กด `i` = iOS  
+   - กด `w` = Web  
+   - หรือสแกน QR ด้วย **Expo Go** บนมือถือ
 
-2. **Choose your platform**
+### Build สำหรับ Production (EAS Build)
 
-   - Press `a` for Android
-   - Press `i` for iOS
-   - Press `w` for Web
-   - Scan QR code with Expo Go app on your device
-
-### Development Workflow
-
-1. **Make changes** to files in the `app/` directory
-2. **Save the file** - Expo will automatically reload
-3. **Test on device/emulator** - Changes appear instantly
-
-### Building for Production
+Expo แนะนำใช้ **EAS Build** สำหรับ build จริง:
 
 ```bash
-# Build for Android
-npx expo build:android
-
-# Build for iOS
-npx expo build:ios
-
-# Or use EAS Build (recommended)
 npm install -g eas-cli
 eas build --platform android
 eas build --platform ios
 ```
 
+ดูรายละเอียด: [Expo EAS Build](https://docs.expo.dev/build/introduction/)
+
+---
+
 ## 🔧 Configuration
 
-### Environment Variables
+- **Environment**: คัดลอก `.env.example` → `.env` แล้วใส่ `GEOCODE_*` และ `SUPABASE_*`
+- **Babel**: ใช้ `react-native-dotenv` ใน `babel.config.js`
+- **Path aliases**: ใช้ `@/` สำหรับ import (เช่น `@/lib/supabase`, `@/utils/pinsSync`, `@/types/pinnit`)
+- **AsyncStorage keys** (อ้างอิงจากเอกสารเทคนิค): `@pinnit_saved_pins` (local pins), `@pinnit_dark_mode`, `@pinnit_map_style`, `@pinnit_pins_cache`, `@pinnit_pending_sync`, `@pinnit_last_sync_at`
 
-The app uses environment variables for API keys and configuration. Make sure to:
-
-1. Copy `.env.example` to `.env`
-2. Fill in your API keys
-3. Never commit `.env` to version control
-
-### Babel Configuration
-
-The project uses `react-native-dotenv` for environment variable support. Configuration is in `babel.config.js`.
-
-### TypeScript Path Aliases
-
-The project uses path aliases for cleaner imports:
-
-```typescript
-import { PinnitItem } from "@/types/pinnit";
-import { loadPins } from "@/utils/storage";
-import { PinItem } from "@/components/PinItem";
-```
+---
 
 ## 📱 App Screens
 
-### Home Screen (`index.tsx`)
-- Displays current location coordinates
-- Shows list of all pinned locations
-- Pin current location button
-- Swipe-to-delete functionality
+| หน้าจอ | หน้าที่ |
+|--------|--------|
+| **Home** (`(tabs)/index`) | รายการ pins (local + จาก Supabase เมื่อล็อกอิน), ปุ่ม + เพิ่ม pin ตำแหน่งปัจจุบัน, แตะรายการ → ไป Map ที่ pin นั้น, กดค้างแก้ชื่อ / ปัดลบ (เฉพาะเจ้าของ) |
+| **Map** (`(tabs)/map`) | MapView + markers ทุก pin + ตำแหน่งปัจจุบัน, แตะบนแผนที่เพื่อเพิ่ม pin, เลื่อนมุมมองไปยัง pin ที่เลือกจาก Home |
+| **Settings** (`(tabs)/settings`) | โหมดมืด, สไตล์แผนที่, ล็อกอิน/สมัคร, อัปโหลด pins ขึ้นบัญชี, ดาวน์โหลด pins ลงเครื่อง, export/import, เกี่ยวกับแอป |
+| **Login** (`(auth)/login`) | เข้าสู่ระบบด้วย username (ภายในใช้ email แบบ username@pinnit.local) |
+| **Sign-up** (`(auth)/sign-up`) | สมัครสมาชิก |
 
-### Map Screen (`map.tsx`)
-- Interactive map with all pinned locations
-- Tap on map to pin new location
-- View selected location from Home screen
-- Zoom controls and recenter button
-
-### Settings Screen (`settings.tsx`)
-- Dark mode toggle
-- Location accuracy settings
-- Map style preferences
-- Data management (export/import)
-- About information
+---
 
 ## 🔐 Permissions
 
-The app requires the following permissions:
+- **Location** — สำหรับตำแหน่งปัจจุบันและติดตามการเคลื่อนที่
+- **Storage** — สำหรับเก็บ pins ในเครื่อง
 
-- **Location Permission**: To get current location and track movement
-- **Storage Permission**: To save pinned locations locally
+---
 
 ## 🐛 Troubleshooting
 
-### Common Issues
+| ปัญหา | วิธีแก้ |
+|--------|--------|
+| Metro ไม่รัน / แก้โค้ดแล้วไม่อัปเดต | `npx expo start --clear` |
+| ค่าใน `.env` ไม่โหลด | ตรวจว่า `.env` อยู่ที่ root, restart Metro หลังแก้ `.env` |
+| ตำแหน่งไม่ทำงาน | เปิดสิทธิ์ Location ของแอป/เครื่อง, บน iOS Simulator: Features → Location |
+| Build/ติดตั้งผิดพลาด | ลบ `node_modules` แล้ว `npm install` ใหม่ |
 
-1. **Metro bundler not starting**
-   ```bash
-   # Clear cache and restart
-   npx expo start --clear
-   ```
+---
 
-2. **Environment variables not loading**
-   - Ensure `.env` file exists in root directory
-   - Restart Metro bundler after creating `.env`
-   - Check `babel.config.js` configuration
+## 📄 เอกสารเทคนิค / Tech Documentation
 
-3. **Location not working**
-   - Check device permissions
-   - Ensure location services are enabled
-   - For iOS simulator, set a location in Features > Location
+รายงานการออกแบบและเทคนิคที่ใช้ใน PinnitApp (Navigation, Home/FlatList, Fetch, AsyncStorage, GPS/Map, Supabase) อธิบายโดยละเอียดใน:
 
-4. **Build errors**
-   ```bash
-   # Clear node_modules and reinstall
-   rm -rf node_modules
-   npm install
-   ```
+- **[docs/TECH_STACK_DOCUMENTATION.md](docs/TECH_STACK_DOCUMENTATION.md)** — รายงานฉบับเต็ม (ภาษาไทย)
 
-## 📝 Development Notes
-
-### Code Organization
-
-- **Components**: Reusable UI components in `components/`
-- **Utils**: Helper functions in `utils/`
-- **Types**: TypeScript definitions in `types/`
-- **Screens**: Main app screens in `app/(tabs)/`
-
-### Best Practices
-
-- Use TypeScript for type safety
-- Follow React Native best practices
-- Keep components small and focused
-- Use environment variables for sensitive data
-- Test on both iOS and Android
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is created as part of a course project (CS-VRU67/2-68, SCS337).
+---
 
 ## 👨‍💻 Developer Information
 
-- **Developed by**: Cherdsak Kh.
-- **Email**: cherd8524@gmail.com
-- **Project**: PinnitApp
-- **Version**: 1.0.0
+| รายการ | รายละเอียด |
+|--------|-------------|
+| **Developer** | Cherdsak Kh. |
+| **Email** | cherd8524@gmail.com |
+| **Project** | PinnitApp v1.0.0 |
+
+---
 
 ## 📚 Resources
 
 - [Expo Documentation](https://docs.expo.dev/)
-- [React Native Documentation](https://reactnative.dev/)
-- [Expo Router Documentation](https://docs.expo.dev/router/introduction/)
-- [React Native Maps](https://github.com/react-native-maps/react-native-maps)
-
-## 🙏 Acknowledgments
-
-- Built with [Expo](https://expo.dev)
-- Maps powered by [react-native-maps](https://github.com/react-native-maps/react-native-maps)
-- Icons from [Ionicons](https://ionic.io/ionicons)
-- Geocoding API from [geocode.maps.co](https://geocode.maps.co/)
+- [React Native](https://reactnative.dev/)
+- [Expo Router](https://docs.expo.dev/router/introduction/)
+- [Supabase](https://supabase.com/docs)
+- [react-native-maps](https://github.com/react-native-maps/react-native-maps)
+- [geocode.maps.co](https://geocode.maps.co/)
 
 ---
 
