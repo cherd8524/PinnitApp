@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { PinnitItem } from "@/types/pinnit";
 import { STORAGE_KEY } from "@env";
-import { supabase } from "@/lib/supabase";
+import { getSessionSafe, supabase } from "@/lib/supabase";
 
 const PINS_CACHE_KEY = "@pinnit_pins_cache";
 const PENDING_SYNC_KEY = "@pinnit_pending_sync";
@@ -55,7 +55,7 @@ async function getStoragePins(): Promise<PinnitItem[]> {
 export async function loadPins(
   isOnline: boolean
 ): Promise<PinnitItem[]> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getSessionSafe();
   const storagePins = await getStoragePins();
 
   if (!session?.user) {
@@ -124,7 +124,7 @@ export async function savePins(
   isOnline: boolean
 ): Promise<void> {
   const sorted = sortPins(pins);
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getSessionSafe();
   if (!session?.user) {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(sorted));
     return;
@@ -163,7 +163,7 @@ export async function savePins(
 
 /** Run pending sync: upload cache to Supabase. Call when back online. */
 export async function runPendingSync(): Promise<boolean> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getSessionSafe();
   if (!session?.user) return false;
   const pending = await AsyncStorage.getItem(PENDING_SYNC_KEY);
   if (!pending) return false;
@@ -220,7 +220,7 @@ export async function getLocalOnlyPinsCount(): Promise<number> {
   } catch {
     return 0;
   }
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getSessionSafe();
   if (!session?.user) return storagePins.length;
   const cacheRaw = await AsyncStorage.getItem(PINS_CACHE_KEY);
   const userPins: PinnitItem[] = cacheRaw ? JSON.parse(cacheRaw) : [];
@@ -230,7 +230,7 @@ export async function getLocalOnlyPinsCount(): Promise<number> {
 
 /** อัปโหลดปักหมุดขึ้นบัญชี: นำรายการในเครื่อง (STORAGE_KEY) ขึ้น database ของ user — ข้อมูลใน local ยังอยู่เหมือนเดิม; เรียกเมื่อ user กด "อัปโหลดปักหมุดขึ้นบัญชี" */
 export async function mergeLocalPinsToSupabase(): Promise<void> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getSessionSafe();
   if (!session?.user) return;
   const localRaw = await AsyncStorage.getItem(STORAGE_KEY);
   const localPins: PinnitItem[] = localRaw ? JSON.parse(localRaw) : [];
