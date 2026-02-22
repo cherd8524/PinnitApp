@@ -21,7 +21,7 @@ import { formatTimeAgo } from "@/utils/format";
 import { loadMapStyle } from "@/utils/storage";
 import { loadPins, savePins, runPendingSync } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
-import { supabase } from "@/lib/supabase";
+import { getSessionSafe, supabase } from "@/lib/supabase";
 
 const FALLBACK_REGION: Region = {
   latitude: 13.7563,
@@ -241,7 +241,7 @@ export default function MapScreen() {
     const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSessionSafe();
       const ownerLabel = session?.user
         ? (session.user.user_metadata?.full_name ?? session.user.user_metadata?.username ?? "บัญชีของฉัน")
         : "เครื่องนี้";

@@ -52,19 +52,60 @@ create policy "Users can do everything on own pins"
   with check (auth.uid() = user_id);
 ```
 
-## 5. สร้าง Storage bucket สำหรับรูปโปรไฟล์
+## 5. สร้าง Storage bucket สำหรับรูปโปรไฟล์ (Pinnit App ใช้ bucket ชื่อ `pinnit-app`)
 
-Dashboard → **Storage** → **New bucket**:
+Dashboard → **Storage** → **New bucket** (หรือใช้ bucket ที่มีอยู่แล้ว):
 
-- Name: `profile-images`
+- Name: `pinnit-app`
 - Public bucket: เปิด (เพื่อให้ URL รูปใช้ได้)
 
-จากนั้นไป **Policies** ของ bucket นี้ → New policy → For full customization:
+แอปอัปโหลดรูปโปรไฟล์ไป path แบบ `avatars/{user_id}.jpg` (หรือ .png, .webp) ดังนั้น RLS ต้องอนุญาตเฉพาะเมื่อ path ขึ้นต้นด้วย `avatars/` และชื่อไฟล์ (ก่อนนามสกุล) ตรงกับ `auth.uid()` เท่านั้น
 
-- Policy name: `Users can manage own avatar`
-- Allowed operation: SELECT, INSERT, UPDATE, DELETE
-- Target roles: authenticated
-- USING expression: `(bucket_id = 'profile-images' AND (storage.foldername(name))[1] = auth.uid()::text)`
-- WITH CHECK: `(bucket_id = 'profile-images' AND (storage.foldername(name))[1] = auth.uid()::text)`
+### ตั้งค่า RLS ด้วย SQL (แนะนำ)
 
-(หรือใช้ template "Allow authenticated users to upload" แล้วแก้ path ให้เป็น `auth.uid()::text`)
+Dashboard → **SQL Editor** → New query → วางแล้วรัน (แก้ `pinnit-app` ถ้าใช้ชื่อ bucket อื่น):
+
+```sql
+-- สร้าง policy สำหรับ bucket pinnit-app (path: avatars/{auth.uid()}.ext)
+-- SELECT: ให้ผู้ใช้ที่ล็อกอินดูไฟล์ใน avatars/ ได้เฉพาะของตัวเอง
+create policy "Users can read own avatar"
+on storage.objects for select
+to authenticated
+using (
+  bucket_id = 'pinnit-app'
+  and name like 'avatars/' || auth.uid()::text || '.%'
+);
+
+-- INSERT: อัปโหลดได้เฉพาะ path avatars/{auth.uid()}.xxx
+create policy "Users can insert own avatar"
+on storage.objects for insert
+to authenticated
+with check (
+  bucket_id = 'pinnit-app'
+  and name like 'avatars/' || auth.uid()::text || '.%'
+);
+
+-- UPDATE: แก้ไขได้เฉพาะไฟล์ของตัวเอง
+create policy "Users can update own avatar"
+on storage.objects for update
+to authenticated
+using (
+  bucket_id = 'pinnit-app'
+  and name like 'avatars/' || auth.uid()::text || '.%'
+)
+with check (
+  bucket_id = 'pinnit-app'
+  and name like 'avatars/' || auth.uid()::text || '.%'
+);
+
+-- DELETE: ลบได้เฉพาะไฟล์ของตัวเอง
+create policy "Users can delete own avatar"
+on storage.objects for delete
+to authenticated
+using (
+  bucket_id = 'pinnit-app'
+  and name like 'avatars/' || auth.uid()::text || '.%'
+);
+```
+
+ถ้ามี policy เดิมที่ทำให้เกิด error "new row violates row-level security policy" ให้ลบ policy เก่าของ bucket `pinnit-app` ออกก่อน (Storage → bucket → Policies) แล้วค่อยรัน SQL ด้านบน

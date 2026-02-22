@@ -24,7 +24,7 @@ import { formatTimeAgo } from "@/utils/format";
 import { loadPins, savePins, runPendingSync, isStoragePin } from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
 import { PinItem } from "@/components/PinItem";
-import { supabase } from "@/lib/supabase";
+import { getSessionSafe, supabase } from "@/lib/supabase";
 
 export default function Index() {
     const colorScheme = useColorScheme();
@@ -69,7 +69,7 @@ export default function Index() {
     }, [isOnline]);
 
     useEffect(() => {
-        supabase.auth.getSession().then(({ data: { session: s } }) => setSession(s));
+        getSessionSafe().then(({ data: { session: s } }) => setSession(s));
     }, []);
 
     // เมื่อกลับมาออนไลน์: นำ pins ที่ปักระหว่างเน็ตหลุดขึ้น database อัตโนมัติ แล้วโหลดใหม่
@@ -94,7 +94,7 @@ export default function Index() {
         useCallback(() => {
             const refresh = async () => {
                 try {
-                    const { data: { session: s } } = await supabase.auth.getSession();
+                    const { data: { session: s } } = await getSessionSafe();
                     setSession(s);
                     const loadedPins = await loadPins(isOnline);
                     setPins(loadedPins);
@@ -186,7 +186,7 @@ export default function Index() {
         const finalName = pinName.trim() || "ชื่อตำแหน่ง";
 
         try {
-            const { data: { session } } = await supabase.auth.getSession();
+            const { data: { session } } = await getSessionSafe();
             const ownerLabel = session?.user
                 ? (session.user.user_metadata?.full_name ?? session.user.user_metadata?.username ?? "บัญชีของฉัน")
                 : "เครื่องนี้";
@@ -301,7 +301,7 @@ export default function Index() {
     const onRefresh = useCallback(async () => {
         setRefreshing(true);
         try {
-            const { data: { session: s } } = await supabase.auth.getSession();
+            const { data: { session: s } } = await getSessionSafe();
             setSession(s);
             const loadedPins = await loadPins(isOnline);
             setPins(loadedPins);
