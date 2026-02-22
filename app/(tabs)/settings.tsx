@@ -2,66 +2,90 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Appearance,
-  Modal,
-  Platform,
   ScrollView,
   StyleSheet,
   Switch,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { Session } from "@supabase/supabase-js";
 import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
 import { SettingsRow } from "@/components/SettingsRow";
 import {
+  AccountCard,
+  AvatarActionSheetModal,
+  AvatarViewerModal,
+  EditNameModal,
+  MapStyleModal,
+  UserGuideModal,
+} from "@/components/settings";
+import { ABOUT_APP, PRIVACY_POLICY, TERMS_OF_SERVICE } from "@/constants/about";
+import { MAP_STYLE_LABELS } from "@/constants/settings";
+import { getSessionSafe, supabase } from "@/lib/supabase";
+import {
+  loadDarkMode,
   loadMapStyle,
+  saveDarkMode,
   saveMapStyle,
   type MapStyleType,
 } from "@/utils/storage";
-import { getSessionSafe, supabase } from "@/lib/supabase";
-import { getLastSyncAt, getLocalOnlyPinsCount, mergeLocalPinsToSupabase, copyCacheToLocalOnLogout } from "@/utils/pinsSync";
+import {
+  getLastSyncAt,
+  getLocalOnlyPinsCount,
+  mergeLocalPinsToSupabase,
+  copyCacheToLocalOnLogout,
+} from "@/utils/pinsSync";
 import { useNetworkStatus } from "@/utils/network";
 import { uploadProfileImage } from "@/utils/avatarUpload";
 
-const DARK_MODE_KEY = "@pinnit_dark_mode";
-
-const MAP_STYLE_LABELS: Record<MapStyleType, string> = {
-  standard: "มาตรฐาน",
-  satellite: "ดาวเทียม",
-  hybrid: "ไฮบริด",
-  terrain: "ภูมิประเทศ",
-};
+const IMAGE_PICKER_OPTIONS = {
+  allowsEditing: true as const,
+  aspect: [1, 1] as [number, number],
+  quality: 0.8,
+  base64: true,
+} as const;
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const systemColorScheme = useColorScheme();
+  const isOnline = useNetworkStatus();
+
+  // —— Modal visibility ——
+  const [showMapStyleModal, setShowMapStyleModal] = useState(false);
+  const [showUserGuideModal, setShowUserGuideModal] = useState(false);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [showAvatarActionSheet, setShowAvatarActionSheet] = useState(false);
+  const [showAvatarViewer, setShowAvatarViewer] = useState(false);
+
+  // —— Auth & session ——
+  const [session, setSession] = useState<Session | null>(null);
+
+  // —— Profile (avatar, display name) ——
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [editNameValue, setEditNameValue] = useState("");
+  const [nameSaving, setNameSaving] = useState(false);
+
+  // —— Sync ——
+  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  // —— Appearance (dark mode, map style) ——
   const [darkMode, setDarkMode] = useState<boolean | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [mapStyle, setMapStyle] = useState<MapStyleType>("standard");
-  const [showMapStyleModal, setShowMapStyleModal] = useState(false);
-  const [showUserGuideModal, setShowUserGuideModal] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
-  const [lastSyncAt, setLastSyncAt] = useState<number | null>(null);
-  const [syncLoading, setSyncLoading] = useState(false);
-  const [avatarUploading, setAvatarUploading] = useState(false);
-  const [showEditNameModal, setShowEditNameModal] = useState(false);
-  const [editNameValue, setEditNameValue] = useState("");
-  const [nameSaving, setNameSaving] = useState(false);
-  const [showAvatarActionSheet, setShowAvatarActionSheet] = useState(false);
-  const [showAvatarViewer, setShowAvatarViewer] = useState(false);
-  const router = useRouter();
-  const isOnline = useNetworkStatus();
 
   const avatarUrl = session?.user?.user_metadata?.avatar_url as string | undefined;
+  const displayName =
+    session?.user?.user_metadata?.full_name ??
+    session?.user?.user_metadata?.username ??
+    "ผู้ใช้";
 
-  // Auth session
+  // —— Effects ——
   useEffect(() => {
     getSessionSafe().then(({ data: { session: s } }) => setSession(s));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event: string, s: Session | null) => setSession(s));
@@ -73,13 +97,14 @@ export default function SettingsScreen() {
     setSession(null);
   };
 
-  const pickerOptions = {
-    allowsEditing: true as const,
-    aspect: [1, 1] as [number, number],
-    quality: 0.8,
-    base64: true,
+  const handleLogoutPress = () => {
+    Alert.alert("ออกจากระบบ", "ต้องการออกจากระบบหรือไม่?", [
+      { text: "ยกเลิก", style: "cancel" },
+      { text: "ออกจากระบบ", style: "destructive", onPress: handleLogout },
+    ]);
   };
 
+  // —— Profile: avatar ——
   const uploadAvatarFromAsset = async (asset: { base64?: string | null; mimeType?: string | null }) => {
     if (!session?.user?.id) return;
     const base64 = asset?.base64 ?? null;
@@ -121,7 +146,7 @@ export default function SettingsScreen() {
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
-        ...pickerOptions,
+        ...IMAGE_PICKER_OPTIONS,
       });
       if (result.canceled) return;
       await uploadAvatarFromAsset(result.assets[0]);
@@ -133,9 +158,6 @@ export default function SettingsScreen() {
       );
     }
   };
-
-  /** @deprecated ใช้ action sheet แทน; เก็บไว้เพื่อ backward ref */
-  const handleChangeProfilePhoto = () => setShowAvatarActionSheet(true);
 
   const handlePickFromLibrary = async () => {
     setShowAvatarActionSheet(false);
@@ -151,7 +173,7 @@ export default function SettingsScreen() {
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      ...pickerOptions,
+      ...IMAGE_PICKER_OPTIONS,
     });
     if (result.canceled) return;
     await uploadAvatarFromAsset(result.assets[0]);
@@ -191,8 +213,12 @@ export default function SettingsScreen() {
     );
   };
 
+  // —— Profile: display name ——
   const openEditNameModal = () => {
-    const current = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.username ?? "";
+    const current =
+      session?.user?.user_metadata?.full_name ??
+      session?.user?.user_metadata?.username ??
+      "";
     setEditNameValue(current);
     setShowEditNameModal(true);
   };
@@ -218,12 +244,11 @@ export default function SettingsScreen() {
     }
   };
 
-  const displayName = session?.user?.user_metadata?.full_name ?? session?.user?.user_metadata?.username ?? "ผู้ใช้";
-
   useEffect(() => {
     getLastSyncAt().then(setLastSyncAt);
   }, [session]);
 
+  // —— Sync ——
   const handleBackupSync = async () => {
     if (!session) {
       Alert.alert("กรุณาล็อกอิน", "ล็อกอินเพื่ออัปโหลดปักหมุดขึ้นบัญชี");
@@ -252,6 +277,16 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleDownloadPinsToLocal = async () => {
+    try {
+      await copyCacheToLocalOnLogout();
+      Alert.alert("บันทึกแล้ว", "ดาวน์โหลดปักหมุดลงเครื่องแล้ว");
+    } catch (e) {
+      console.error("Copy to local error", e);
+      Alert.alert("บันทึกไม่สำเร็จ", "กรุณาลองอีกครั้ง");
+    }
+  };
+
   const backupSyncSubtitle =
     !session
       ? "ล็อกอินก่อนจึงจะนำรายการในเครื่องไปเก็บในบัญชีได้"
@@ -259,17 +294,15 @@ export default function SettingsScreen() {
         ? "ไม่มีเน็ต — รายการที่ปักตอนเน็ตหลุดจะขึ้นบัญชีอัตโนมัติเมื่อกลับออนไลน์"
         : "นำรายการในเครื่องไปเก็บในบัญชี";
 
-  // Load saved preference on mount
+  // —— Appearance (dark mode, map style) ——
   useEffect(() => {
     (async () => {
       try {
-        const saved = await AsyncStorage.getItem(DARK_MODE_KEY);
+        const saved = await loadDarkMode();
         if (saved !== null) {
-          const isDark = saved === "true";
-          setDarkMode(isDark);
-          Appearance.setColorScheme(isDark ? "dark" : "light");
+          setDarkMode(saved);
+          Appearance.setColorScheme(saved ? "dark" : "light");
         } else {
-          // First time: use system preference
           const isDark = systemColorScheme === "dark";
           setDarkMode(isDark);
         }
@@ -282,7 +315,6 @@ export default function SettingsScreen() {
     })();
   }, [systemColorScheme]);
 
-  // Load map style on mount
   useEffect(() => {
     loadMapStyle().then(setMapStyle);
   }, []);
@@ -300,11 +332,12 @@ export default function SettingsScreen() {
     [isDark]
   );
 
+  // —— Appearance (handlers) ——
   const handleDarkModeToggle = async (value: boolean) => {
     try {
       setDarkMode(value);
       Appearance.setColorScheme(value ? "dark" : "light");
-      await AsyncStorage.setItem(DARK_MODE_KEY, value.toString());
+      await saveDarkMode(value);
     } catch (error) {
       console.error("Error saving dark mode preference:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกการตั้งค่าโหมดมืดได้");
@@ -320,6 +353,19 @@ export default function SettingsScreen() {
       console.error("Error saving map style:", error);
       Alert.alert("เกิดข้อผิดพลาด", "ไม่สามารถบันทึกการตั้งค่าสไตล์แผนที่ได้");
     }
+  };
+
+  // —— About (info dialogs) ——
+  const handleAboutPress = () => {
+    Alert.alert(ABOUT_APP.title, ABOUT_APP.body);
+  };
+
+  const handlePrivacyPress = () => {
+    Alert.alert(PRIVACY_POLICY.title, PRIVACY_POLICY.body);
+  };
+
+  const handleTermsPress = () => {
+    Alert.alert(TERMS_OF_SERVICE.title, TERMS_OF_SERVICE.body);
   };
 
   return (
@@ -357,81 +403,23 @@ export default function SettingsScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            {!session ? (
-              <TouchableOpacity
-                style={styles.accountRow}
-                onPress={() => router.navigate("/(auth)/login")}
-              >
-                <View style={styles.accountRowLeft}>
-                  <View style={styles.avatarPlaceholder}>
-                    <Ionicons name="person-outline" size={28} color="#007AFF" />
-                  </View>
-                  <View>
-                    <Text style={[styles.accountName, { color: colors.textPrimary }]}>
-                      ล็อกอิน
-                    </Text>
-                    <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
-                      ล็อกอินเพื่อซิงค์และสำรอง pins
-                    </Text>
-                  </View>
-                </View>
-                <MaterialCommunityIcons
-                  name="chevron-right"
-                  size={22}
-                  color={isDark ? "#6B7280" : "#9CA3AF"}
-                />
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.accountRow}>
-                <View style={styles.accountRowLeft}>
-                  <TouchableOpacity
-                    onPress={() => setShowAvatarActionSheet(true)}
-                    disabled={avatarUploading}
-                    style={styles.avatarTouchable}
-                  >
-                    <View style={styles.avatarPlaceholder}>
-                      {avatarUrl ? (
-                        <Image
-                          source={{
-                            uri: avatarUrl.includes("?")
-                              ? `${avatarUrl}&v=${session?.user?.user_metadata?.avatar_updated_at ?? ""}`
-                              : `${avatarUrl}?v=${session?.user?.user_metadata?.avatar_updated_at ?? ""}`,
-                          }}
-                          style={styles.avatarImage}
-                        />
-                      ) : (
-                        <Text style={styles.avatarInitial}>
-                          {displayName.charAt(0).toUpperCase()}
-                        </Text>
-                      )}
-                    </View>
-                    <View style={[styles.avatarBadge, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                      <Ionicons name="camera" size={14} color="#007AFF" />
-                    </View>
-                  </TouchableOpacity>
-                  <View style={styles.accountNameBlock}>
-                    <Text style={[styles.accountName, { color: colors.textPrimary }]}>
-                      {displayName || "ผู้ใช้"}
-                    </Text>
-                    <Text style={[styles.accountSub, { color: colors.sectionLabel }]}>
-                      {avatarUploading ? "กำลังอัปโหลด..." : (session.user?.user_metadata?.username ?? session.user?.email?.split("@")[0] ?? "ล็อกอินแล้ว")}
-                    </Text>
-                  </View>
-                </View>
-                <TouchableOpacity
-                  onPress={openEditNameModal}
-                  style={styles.accountRowRightIcon}
-                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons
-                    name="pencil-outline"
-                    size={22}
-                    color={isDark ? "#6B7280" : "#9CA3AF"}
-                  />
-                </TouchableOpacity>
-              </View>
-            )}
+            <AccountCard
+              isLoggedIn={!!session}
+              displayName={displayName}
+              subtitle={
+                session?.user?.user_metadata?.username ??
+                session?.user?.email?.split("@")[0] ??
+                "ล็อกอินแล้ว"
+              }
+              avatarUrl={avatarUrl}
+              avatarVersion={session?.user?.user_metadata?.avatar_updated_at ?? ""}
+              avatarUploading={avatarUploading}
+              isDark={isDark}
+              colors={colors}
+              onLogin={() => router.navigate("/(auth)/login")}
+              onAvatarPress={() => setShowAvatarActionSheet(true)}
+              onEditName={openEditNameModal}
+            />
           </View>
         </View>
 
@@ -553,15 +541,7 @@ export default function SettingsScreen() {
                 icon="save-outline"
                 label="ดาวน์โหลดปักหมุดลงเครื่อง"
                 subtitle="เก็บสำเนารายการในบัญชีไว้ในเครื่อง"
-                onPress={async () => {
-                  try {
-                    await copyCacheToLocalOnLogout();
-                    Alert.alert("บันทึกแล้ว", "ดาวน์โหลดปักหมุดลงเครื่องแล้ว");
-                  } catch (e) {
-                    console.error("Copy to local error", e);
-                    Alert.alert("บันทึกไม่สำเร็จ", "กรุณาลองอีกครั้ง");
-                  }
-                }}
+                onPress={handleDownloadPinsToLocal}
                 isDark={isDark}
               />
             </View>
@@ -598,12 +578,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="information-circle-outline"
               label="เกี่ยวกับ Pinnit"
-              onPress={() => {
-                Alert.alert(
-                  "เกี่ยวกับ Pinnit App",
-                  "Pinnit v1.0.0\n\nแอปปักหมุดตำแหน่งที่เรียบง่ายและสวยงาม\n\nสร้างด้วย ❤️ เพื่อติดตามสถานที่โปรดของคุณ\n\n━━━━━━━━━━━━━━━━━━━━\n\nข้อมูลนักพัฒนา:\n\nพัฒนาโดย: Cherdsak Kh.\nหลักสูตร: SCS337\nโปรเจกต์: PinnitApp\n\nแอปนี้สร้างขึ้นเป็นส่วนหนึ่งของโปรเจกต์หลักสูตร เพื่อสาธิตฟีเจอร์เกี่ยวกับตำแหน่งและการพัฒนาแอปมือถือสมัยใหม่"
-                );
-              }}
+              onPress={handleAboutPress}
               isDark={isDark}
             />
             <View
@@ -615,15 +590,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="shield-checkmark-outline"
               label="นโยบายความเป็นส่วนตัว"
-              onPress={() => {
-                Alert.alert(
-                  "นโยบายความเป็นส่วนตัว",
-                  "แอป Pinnit นี้จัดทำเป็นกรณีศึกษาภายในวิชาเรียน ไม่ได้ปล่อยให้บริการในระดับสาธารณะ\n\n" +
-                  "• ข้อมูลที่เก็บ: ตำแหน่งปักหมุด ชื่อบัญชี รูปโปรไฟล์ เก็บในอุปกรณ์และบน Supabase เมื่อล็อกอิน ใช้เพื่อการเรียนและทดสอบฟีเจอร์เท่านั้น\n\n" +
-                  "• การใช้ข้อมูล: ไม่มีการนำข้อมูลไปใช้เชิงพาณิชย์หรือแชร์ให้บุคคลที่สาม\n\n" +
-                  "• ความปลอดภัย: การเชื่อมต่อใช้ HTTPS บัญชีอยู่ภายใต้ Supabase Auth การตั้งค่า (โหมดมืด, สไตล์แผนที่) เก็บเฉพาะในอุปกรณ์"
-                );
-              }}
+              onPress={handlePrivacyPress}
               isDark={isDark}
             />
             <View
@@ -635,15 +602,7 @@ export default function SettingsScreen() {
             <SettingsRow
               icon="document-text-outline"
               label="เงื่อนไขการให้บริการ"
-              onPress={() => {
-                Alert.alert(
-                  "เงื่อนไขการให้บริการ",
-                  "แอป Pinnit เป็นโปรเจกต์กรณีศึกษาสำหรับวิชาเรียน (React Native / Expo) ไม่ได้ให้บริการสำหรับผู้ใช้ทั่วไป\n\n" +
-                  "• วัตถุประสงค์: ใช้เพื่อการเรียนรู้และสาธิตการพัฒนาแอปมือถือ เทคโนโลยีที่ใช้ (แผนที่, Auth, Storage, ซิงค์ข้อมูล) เป็นไปเพื่อการศึกษาทางเทคนิค\n\n" +
-                  "• การใช้งาน: ใช้แอปในบริบทของห้องเรียนหรือการทดสอบเท่านั้น บริการซิงค์และเซิร์ฟเวอร์อาจไม่มีการรับประกันความต่อเนื่อง\n\n" +
-                  "• ข้อจำกัด: แอปไม่ใช่ผลิตภัณฑ์เชิงพาณิชย์ เงื่อนไขนี้อาจมีการปรับปรุงตามบริบทของรายวิชา"
-                );
-              }}
+              onPress={handleTermsPress}
               isDark={isDark}
             />
           </View>
@@ -653,12 +612,7 @@ export default function SettingsScreen() {
           <View style={[styles.section, { marginTop: 32 }]}>
             <TouchableOpacity
               style={[styles.logoutButton, { borderColor: colors.border }]}
-              onPress={() => {
-                Alert.alert("ออกจากระบบ", "ต้องการออกจากระบบหรือไม่?", [
-                  { text: "ยกเลิก", style: "cancel" },
-                  { text: "ออกจากระบบ", style: "destructive", onPress: () => handleLogout() },
-                ]);
-              }}
+              onPress={handleLogoutPress}
             >
               <Ionicons name="log-out-outline" size={20} color="#DC2626" />
               <Text style={styles.logoutText}>ออกจากระบบ</Text>
@@ -673,363 +627,51 @@ export default function SettingsScreen() {
         </View>
       </ScrollView>
 
-      {/* Avatar action sheet */}
-      <Modal
+      <AvatarActionSheetModal
         visible={showAvatarActionSheet}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAvatarActionSheet(false)}
-      >
-        <TouchableOpacity
-          style={styles.actionSheetOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAvatarActionSheet(false)}
-        >
-          <TouchableOpacity
-            style={[styles.actionSheetContainer, { backgroundColor: colors.card }]}
-            activeOpacity={1}
-            onPress={() => {}}
-          >
-            <View style={[styles.actionSheetHandle, { backgroundColor: colors.sectionLabel }]} />
-            <Text style={[styles.actionSheetTitle, { color: colors.sectionLabel }]}>
-              รูปโปรไฟล์
-            </Text>
-            <TouchableOpacity
-              style={styles.actionSheetOption}
-              onPress={() => { setShowAvatarActionSheet(false); handleTakePhoto(); }}
-            >
-              <Ionicons name="camera-outline" size={22} color="#007AFF" />
-              <Text style={[styles.actionSheetOptionText, { color: colors.textPrimary }]}>
-                ถ่ายภาพ
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.sectionLabel} />
-            </TouchableOpacity>
-            {avatarUrl ? (
-              <TouchableOpacity
-                style={styles.actionSheetOption}
-                onPress={() => { setShowAvatarActionSheet(false); setShowAvatarViewer(true); }}
-              >
-                <Ionicons name="eye-outline" size={22} color="#007AFF" />
-                <Text style={[styles.actionSheetOptionText, { color: colors.textPrimary }]}>
-                  ดูรูปโปรไฟล์
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.sectionLabel} />
-              </TouchableOpacity>
-            ) : null}
-            {avatarUrl ? (
-              <TouchableOpacity
-                style={styles.actionSheetOption}
-                onPress={() => handlePickFromLibrary()}
-              >
-                <Ionicons name="images-outline" size={22} color="#007AFF" />
-                <Text style={[styles.actionSheetOptionText, { color: colors.textPrimary }]}>
-                  เปลี่ยนรูปโปรไฟล์
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.sectionLabel} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity
-                style={styles.actionSheetOption}
-                onPress={() => handlePickFromLibrary()}
-              >
-                <Ionicons name="cloud-upload-outline" size={22} color="#007AFF" />
-                <Text style={[styles.actionSheetOptionText, { color: colors.textPrimary }]}>
-                  อัพโหลดรูปโปรไฟล์
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.sectionLabel} />
-              </TouchableOpacity>
-            )}
-            {avatarUrl ? (
-              <TouchableOpacity
-                style={styles.actionSheetOption}
-                onPress={() => { setShowAvatarActionSheet(false); handleRemoveProfilePhoto(); }}
-              >
-                <Ionicons name="trash-outline" size={22} color="#DC2626" />
-                <Text style={[styles.actionSheetOptionText, styles.actionSheetOptionDestructive]}>
-                  ลบรูปโปรไฟล์
-                </Text>
-                <Ionicons name="chevron-forward" size={18} color={colors.sectionLabel} />
-              </TouchableOpacity>
-            ) : null}
-            <View style={[styles.actionSheetDivider, { backgroundColor: colors.border }]} />
-            <TouchableOpacity
-              style={styles.actionSheetCancel}
-              onPress={() => setShowAvatarActionSheet(false)}
-            >
-              <Text style={[styles.actionSheetCancelText, { color: colors.sectionLabel }]}>
-                ยกเลิก
-              </Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        hasAvatar={!!avatarUrl}
+        colors={colors}
+        onTakePhoto={handleTakePhoto}
+        onViewAvatar={() => setShowAvatarViewer(true)}
+        onPickFromLibrary={() => {
+          setShowAvatarActionSheet(false);
+          handlePickFromLibrary();
+        }}
+        onRemovePhoto={handleRemoveProfilePhoto}
+        onClose={() => setShowAvatarActionSheet(false)}
+      />
 
-      {/* Avatar viewer modal */}
-      <Modal
+      <AvatarViewerModal
         visible={showAvatarViewer}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowAvatarViewer(false)}
-      >
-        <TouchableOpacity
-          style={styles.avatarViewerOverlay}
-          activeOpacity={1}
-          onPress={() => setShowAvatarViewer(false)}
-        >
-          <TouchableOpacity
-            style={styles.avatarViewerContent}
-            activeOpacity={1}
-            onPress={() => {}}
-          >
-            {avatarUrl ? (
-              <Image
-                source={{
-                  uri: avatarUrl.includes("?")
-                    ? `${avatarUrl}&v=${session?.user?.user_metadata?.avatar_updated_at ?? ""}`
-                    : `${avatarUrl}?v=${session?.user?.user_metadata?.avatar_updated_at ?? ""}`,
-                }}
-                style={styles.avatarViewerImage}
-                resizeMode="contain"
-              />
-            ) : null}
-            <TouchableOpacity
-              style={[styles.avatarViewerClose, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => setShowAvatarViewer(false)}
-            >
-              <Text style={[styles.avatarViewerCloseText, { color: colors.textPrimary }]}>
-                ปิด
-              </Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        avatarUrl={avatarUrl}
+        avatarVersion={session?.user?.user_metadata?.avatar_updated_at ?? ""}
+        colors={colors}
+        onClose={() => setShowAvatarViewer(false)}
+      />
 
-      {/* Edit profile name modal */}
-      <Modal
+      <EditNameModal
         visible={showEditNameModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowEditNameModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowEditNameModal(false)}
-        >
-          <TouchableOpacity
-            style={[
-              styles.editNameModalContent,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-            activeOpacity={1}
-            onPress={() => {}}
-          >
-            <Text style={[styles.mapStyleModalTitle, { color: colors.textPrimary }]}>
-              เปลี่ยนชื่อโปรไฟล์
-            </Text>
-            <TextInput
-              style={[
-                styles.editNameInput,
-                { color: colors.textPrimary, borderColor: colors.border },
-              ]}
-              placeholder="ชื่อที่แสดง"
-              placeholderTextColor={colors.sectionLabel}
-              value={editNameValue}
-              onChangeText={setEditNameValue}
-              autoCapitalize="words"
-              editable={!nameSaving}
-            />
-            <View style={styles.editNameButtons}>
-              <TouchableOpacity
-                style={[styles.editNameButton, styles.editNameButtonCancel, { borderColor: colors.border }]}
-                onPress={() => setShowEditNameModal(false)}
-                disabled={nameSaving}
-              >
-                <Text style={[styles.editNameButtonText, { color: colors.sectionLabel }]}>
-                  ยกเลิก
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.editNameButton, styles.editNameButtonSave]}
-                onPress={handleSaveDisplayName}
-                disabled={nameSaving}
-              >
-                <Text style={styles.editNameButtonSaveText}>
-                  {nameSaving ? "กำลังบันทึก..." : "บันทึก"}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        value={editNameValue}
+        colors={colors}
+        saving={nameSaving}
+        onChangeText={setEditNameValue}
+        onSave={handleSaveDisplayName}
+        onClose={() => setShowEditNameModal(false)}
+      />
 
-      {/* User Guide Modal */}
-      <Modal
+      <UserGuideModal
         visible={showUserGuideModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowUserGuideModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowUserGuideModal(false)}
-        >
-          <TouchableOpacity
-            style={[
-              styles.userGuideModalContent,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-            activeOpacity={1}
-            onPress={() => {}}
-          >
-            <Text style={[styles.mapStyleModalTitle, { color: colors.textPrimary }]}>
-              คู่มือการใช้งาน
-            </Text>
-            <ScrollView
-              style={styles.userGuideScroll}
-              showsVerticalScrollIndicator={true}
-            >
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                คู่มือนี้แนะนำวิธีใช้งานแอปและฟีเจอร์ต่างๆ ของ Pinnit เพื่อให้คุณใช้แอปได้อย่างเต็มประสิทธิภาพ
-              </Text>
-              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ฟีเจอร์แท็บรายการ
-              </Text>
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • กดปุ่ม "ปักหมุดตำแหน่งปัจจุบัน" เพื่อเพิ่มตำแหน่งปัจจุบันลงรายการ
-                {"\n"}• กดที่รายการเพื่อดูตำแหน่งบนแผนที่
-                {"\n"}• กดค้างเพื่อแก้ไขชื่อหรือตำแหน่ง
-                {"\n"}• ปัดซ้ายเพื่อลบรายการ
-              </Text>
-              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ฟีเจอร์แผนที่
-              </Text>
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • แสดง markers ของตำแหน่งที่บันทึกทั้งหมด
-                {"\n"}• กดที่ตำแหน่งบนแผนที่เพื่อปักหมุดใหม่
-                {"\n"}• เลือกสไตล์แผนที่ได้จากเมนูตั้งค่า
-              </Text>
-              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ฟีเจอร์บัญชีและซิงค์
-              </Text>
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • ล็อกอินเพื่อซิงค์ตำแหน่งกับบัญชี cloud
-                {"\n"}• เมื่อออฟไลน์ ข้อมูลเก็บในเครื่อง และจะซิงค์เมื่อกลับมาออนไลน์
-                {"\n"}• อัปโหลดปักหมุดขึ้นบัญชี: นำปักหมุดในเครื่องขึ้นบัญชี
-                {"\n"}• ดาวน์โหลดปักหมุดลงเครื่อง: ดึงปักหมุดจากบัญชีลงเครื่อง
-              </Text>
-              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ฟีเจอร์โปรไฟล์
-              </Text>
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • กดที่วงกลมรูปโปรไฟล์ เพื่อเปิดเมนู: ถ่ายภาพ, ดูรูปโปรไฟล์, อัพโหลด/เปลี่ยนรูป, ลบรูปโปรไฟล์
-                {"\n"}• กดไอคอนแก้ไข (ดินสอ) ทางขวาของการ์ดบัญชี เพื่อเปลี่ยนชื่อที่แสดง
-              </Text>
-              <Text style={[styles.userGuideSection, { color: colors.textPrimary }]}>
-                ฟีเจอร์ตั้งค่า
-              </Text>
-              <Text style={[styles.userGuideText, { color: colors.sectionLabel }]}>
-                • สไตล์แผนที่: มาตรฐาน / ดาวเทียม / ไฮบริด / ภูมิประเทศ
-                {"\n"}• โหมดมืด: ปรับจอให้เหมาะกับเวลากลางคืน
-              </Text>
-            </ScrollView>
-            <TouchableOpacity
-              style={[styles.modalCloseButton, { borderColor: colors.border }]}
-              onPress={() => setShowUserGuideModal(false)}
-            >
-              <Text style={[styles.modalCloseText, { color: colors.sectionLabel }]}>
-                ปิด
-              </Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        colors={colors}
+        onClose={() => setShowUserGuideModal(false)}
+      />
 
-      {/* Map Style Selection Modal */}
-      <Modal
+      <MapStyleModal
         visible={showMapStyleModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowMapStyleModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMapStyleModal(false)}
-        >
-          <TouchableOpacity
-            style={[
-              styles.mapStyleModalContent,
-              {
-                backgroundColor: colors.card,
-                borderColor: colors.border,
-              },
-            ]}
-            activeOpacity={1}
-            onPress={() => { }}
-          >
-            <Text
-              style={[
-                styles.mapStyleModalTitle,
-                { color: colors.textPrimary },
-              ]}
-            >
-              สไตล์แผนที่
-            </Text>
-            <Text
-              style={[
-                styles.mapStyleModalSubtitle,
-                { color: colors.sectionLabel },
-              ]}
-            >
-              เลือกการแสดงผลแผนที่
-            </Text>
-            {(Object.keys(MAP_STYLE_LABELS) as MapStyleType[]).map((style) => (
-              <TouchableOpacity
-                key={style}
-                style={[
-                  styles.mapStyleOption,
-                  {
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-                onPress={() => handleSelectMapStyle(style)}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.mapStyleOptionLabel,
-                    { color: colors.textPrimary },
-                  ]}
-                >
-                  {MAP_STYLE_LABELS[style]}
-                </Text>
-                {mapStyle === style && (
-                  <Ionicons name="checkmark-circle" size={22} color="#007AFF" />
-                )}
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity
-              style={styles.mapStyleCancelButton}
-              onPress={() => setShowMapStyleModal(false)}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.mapStyleCancelText,
-                  { color: colors.sectionLabel },
-                ]}
-              >
-                ยกเลิก
-              </Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
+        currentStyle={mapStyle}
+        colors={colors}
+        onSelect={handleSelectMapStyle}
+        onClose={() => setShowMapStyleModal(false)}
+      />
     </SafeAreaView>
   );
 }
@@ -1075,83 +717,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: "hidden",
   },
-  accountRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  accountRowLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    flex: 1,
-  },
-  accountRowRightIcon: {
-    marginLeft: 4,
-  },
-  avatarTouchable: {
-    position: "relative",
-  },
-  avatarPlaceholder: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#DBEAFE",
-    alignItems: "center",
-    justifyContent: "center",
-    overflow: "hidden",
-  },
-  avatarImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-  },
-  avatarBadge: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarInitial: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: "#1D4ED8",
-  },
-  accountName: {
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  accountSub: {
-    fontSize: 13,
-    marginTop: 2,
-  },
-  accountNameBlock: {
-    flex: 1,
-    justifyContent: "center",
-  },
-  logoutButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginHorizontal: 20,
-    marginBottom: 16,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderRadius: 12,
-  },
-  logoutText: {
-    fontSize: 15,
-    color: "#DC2626",
-    fontWeight: "500",
-  },
   cardDivider: {
     height: 1,
     opacity: 0.7,
@@ -1187,207 +752,20 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 12,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  actionSheetOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    justifyContent: "flex-end",
-  },
-  actionSheetContainer: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 10,
-    paddingHorizontal: 16,
-    paddingBottom: Platform.OS === "ios" ? 34 : 24,
-  },
-  actionSheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    alignSelf: "center",
-    marginBottom: 16,
-    opacity: 0.5,
-  },
-  actionSheetTitle: {
-    fontSize: 12,
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 1,
-    marginBottom: 8,
-    paddingHorizontal: 4,
-  },
-  actionSheetOption: {
+  logoutButton: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 4,
-    gap: 12,
+    justifyContent: "center",
+    gap: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderRadius: 12,
   },
-  actionSheetOptionText: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  actionSheetOptionDestructive: {
+  logoutText: {
+    fontSize: 15,
     color: "#DC2626",
-  },
-  actionSheetDivider: {
-    height: 1,
-    marginVertical: 8,
-    opacity: 0.6,
-  },
-  actionSheetCancel: {
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  actionSheetCancelText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  avatarViewerOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  avatarViewerContent: {
-    width: "100%",
-    maxWidth: 360,
-    alignItems: "center",
-  },
-  avatarViewerImage: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 16,
-  },
-  avatarViewerClose: {
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  avatarViewerCloseText: {
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  mapStyleModalContent: {
-    width: "100%",
-    maxWidth: 340,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-  },
-  userGuideModalContent: {
-    width: "100%",
-    maxWidth: 360,
-    maxHeight: "80%",
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-  },
-  editNameModalContent: {
-    width: "100%",
-    maxWidth: 340,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-  },
-  editNameInput: {
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    fontSize: 16,
-  },
-  editNameButtons: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 10,
-    marginTop: 16,
-  },
-  editNameButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    borderRadius: 10,
-  },
-  editNameButtonCancel: {
-    borderWidth: 1,
-  },
-  editNameButtonSave: {
-    backgroundColor: "#007AFF",
-  },
-  editNameButtonText: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  editNameButtonSaveText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  userGuideScroll: {
-    maxHeight: 400,
-    marginVertical: 12,
-  },
-  userGuideSection: {
-    fontSize: 15,
-    fontWeight: "600",
-    marginTop: 12,
-    marginBottom: 4,
-  },
-  userGuideText: {
-    fontSize: 14,
-    lineHeight: 22,
-    marginBottom: 4,
-  },
-  modalCloseButton: {
-    alignSelf: "center",
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderRadius: 10,
-    marginTop: 8,
-  },
-  modalCloseText: {
-    fontSize: 15,
-    fontWeight: "500",
-  },
-  mapStyleModalTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 4,
-  },
-  mapStyleModalSubtitle: {
-    fontSize: 14,
-    marginBottom: 16,
-  },
-  mapStyleOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  mapStyleOptionLabel: {
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  mapStyleCancelButton: {
-    marginTop: 12,
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  mapStyleCancelText: {
-    fontSize: 16,
     fontWeight: "500",
   },
   footer: {

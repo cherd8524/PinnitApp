@@ -3,6 +3,7 @@ import { PinnitItem } from "@/types/pinnit";
 import { STORAGE_KEY } from "@env";
 
 export const MAP_STYLE_KEY = "@pinnit_map_style";
+export const DARK_MODE_KEY = "@pinnit_dark_mode";
 
 export type MapStyleType = "standard" | "satellite" | "hybrid" | "terrain";
 
@@ -29,6 +30,26 @@ export const saveMapStyle = async (style: MapStyleType): Promise<void> => {
     await AsyncStorage.setItem(MAP_STYLE_KEY, style);
   } catch (error) {
     console.error("Error saving map style:", error);
+    throw error;
+  }
+};
+
+export const loadDarkMode = async (): Promise<boolean | null> => {
+  try {
+    const saved = await AsyncStorage.getItem(DARK_MODE_KEY);
+    if (saved === null) return null;
+    return saved === "true";
+  } catch (error) {
+    console.error("Error loading dark mode preference:", error);
+    return null;
+  }
+};
+
+export const saveDarkMode = async (value: boolean): Promise<void> => {
+  try {
+    await AsyncStorage.setItem(DARK_MODE_KEY, value.toString());
+  } catch (error) {
+    console.error("Error saving dark mode preference:", error);
     throw error;
   }
 };
