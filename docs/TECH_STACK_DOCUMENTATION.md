@@ -26,8 +26,8 @@ PinnitApp พัฒนาด้วยเทคโนโลยีหลักค�
 ในเชิงเทคนิค หน้า Home ใช้ `useFocusEffect` ในการโหลดรายการปักหมุดทุกครั้งที่หน้าได้รับโฟกัส ทำให้เมื่อผู้ใช้เพิ่ม แก้ไข หรือ ลบปักหมุดจากหน้าจออื่นแล้วกลับมาหน้าแรก ข้อมูลจะถูกอัปเดตอย่างถูกต้องเสมอ การแสดงผลแต่ละรายการแยกออกเป็นคอมโพเนนต์ย่อยชื่อ `PinItem` ซึ่งรองรับการปัดเพื่อลบ การแสดงสถานะ read-only และการตอบสนองต่อการกดค้างเพื่อแก้ไขชื่อ โดยมีไฟล์ `utils/pinsSync.ts` เป็นตัวกลางในการโหลด บันทึก และซิงค์ข้อมูลระหว่าง local storage และ Supabase
 
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L93)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L26)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L329)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L28)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L315)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/components/PinItem.tsx)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/utils/pinsSync.ts)
 
@@ -37,10 +37,10 @@ PinnitApp พัฒนาด้วยเทคโนโลยีหลักค�
 
 นอกจากนี้ `FlatList` ยังใช้ `keyExtractor` โดยกำหนดให้ใช้ `id` ของปักหมุดแต่ละรายการเป็นค่า key เพื่อให้ React สามารถติดตามและอัปเดตรายการที่เปลี่ยนแปลงได้อย่างถูกต้อง ลดการเรนเดอร์ซ้ำโดยไม่จำเป็น และช่วยให้ประสิทธิภาพของหน้า Home สูงขึ้น แม้จำนวนปักหมุดจะมีมากก็ตาม
 
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L542)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L528)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L328)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L544)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L545)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L530)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L531)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/components/PinItem.tsx)
 
 ## 5. Fetch (Data Fetching)
@@ -83,7 +83,7 @@ PinnitApp พัฒนาด้วยเทคโนโลยีหลักค�
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/index.tsx#L134)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L13)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L14)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L378)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L377)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L393)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L411)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/map.tsx#L509)
@@ -125,7 +125,7 @@ Supabase Storage ทำหน้าที่เป็นที่เก็บไ
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/utils/avatarUpload.ts#L36)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/utils/avatarUpload.ts#L45)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/settings.tsx#L44)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/settings.tsx#L118)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/settings.tsx#L116)
 
 ## 10. Supabase (Auth)
 
@@ -138,8 +138,8 @@ Supabase Auth ทำหน้าที่เป็นระบบยืนยั
 เมื่อผู้ใช้เปลี่ยนรูปโปรไฟล์จาก action sheet (ถ่ายภาพหรือเลือกรูปจากคลัง) แอปจะอัปโหลดรูปขึ้น Storage แล้วเรียก `supabase.auth.updateUser({ data: { ...user_metadata, avatar_url, avatar_updated_at } })` เพื่ออัปเดต metadata เมื่อผู้ใช้เลือกลบรูปโปรไฟล์ แอปจะส่ง `avatar_url: null` และ `avatar_updated_at: null` ใน data เพื่อให้ค่าใน metadata ถูกล้าง (เนื่องจาก Supabase รวม metadata แบบ merge) การออกจากระบบทำด้วย `supabase.auth.signOut()` จากนั้น session จะเป็น null และแอปจะกลับไปใช้โหมดไม่ล็อกอิน ข้อมูลปักหมุดที่แสดงจะมาจาก “รายการในเครื่อง” เท่านั้น จนกว่าผู้ใช้จะล็อกอินอีกครั้ง
 
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/lib/supabase.ts#L12)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/lib/supabase.ts#L24)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/lib/supabase.ts#L22)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/lib/supabase.ts#L38)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(auth)/sign-up.tsx#L112)
 - (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(auth)/login.tsx#L63)
-- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/settings.tsx#L96)
+- (Ref: https://github.com/cherd8524/PinnitApp/blob/master/app/(tabs)/settings.tsx#L88)

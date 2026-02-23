@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Appearance,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -138,6 +139,9 @@ export default function SettingsScreen() {
       Alert.alert("ออฟไลน์", "ต้องเชื่อมต่ออินเทอร์เน็ตเพื่ออัปโหลดรูปโปรไฟล์");
       return;
     }
+    if (Platform.OS === "ios") {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("ต้องใช้สิทธิ์", "เปิดสิทธิ์กล้องเพื่อถ่ายภาพโปรไฟล์");
@@ -166,6 +170,10 @@ export default function SettingsScreen() {
       Alert.alert("ออฟไลน์", "ต้องเชื่อมต่ออินเทอร์เน็ตเพื่ออัปโหลดรูปโปรไฟล์");
       return;
     }
+    // รอให้ Modal ปิดก่อนแล้วค่อยเปิด native picker (แก้ปัญหา iOS Simulator ที่กดแล้วไม่มีอะไรเกิดขึ้น)
+    if (Platform.OS === "ios") {
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== "granted") {
       Alert.alert("ต้องใช้สิทธิ์", "เปิดสิทธิ์เข้าถึงรูปภาพเพื่อเลือกรูปโปรไฟล์");
@@ -174,6 +182,9 @@ export default function SettingsScreen() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       ...IMAGE_PICKER_OPTIONS,
+      ...(Platform.OS === "ios" && {
+        presentationStyle: ImagePicker.UIImagePickerPresentationStyle.OVER_CURRENT_CONTEXT,
+      }),
     });
     if (result.canceled) return;
     await uploadAvatarFromAsset(result.assets[0]);
