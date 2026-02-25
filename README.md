@@ -38,6 +38,7 @@ Pinnit lets you:
 - **ปัดเพื่อลบ** — ลบ pin ด้วยการปัด (swipe); pin ที่ไม่ใช่เจ้าของแสดงแบบอ่านอย่างเดียว
 - **โหมดมืด & สไตล์แผนที่** — เก็บค่าการตั้งค่าในเครื่อง
 - **ซิงค์กับ Cloud** — ล็อกอินด้วย username; อัปโหลด pins จากเครื่องขึ้นบัญชี หรือดาวน์โหลดจากบัญชีลงเครื่อง (ตั้งค่าใน Settings)
+- **โปรไฟล์** — อัปโหลดรูปโปรไฟล์ (อวาตาร์) และแก้ไขชื่อแสดง; ดูคู่มือการใช้งานจาก Settings
 
 ---
 
@@ -52,6 +53,8 @@ Pinnit lets you:
 | 👤 ล็อกอิน/สมัคร | หน้า Login & Sign-up (app/(auth)); ล็อกอินด้วย username → sync กับ Supabase |
 | ☁️ ซิงค์บัญชี | อัปโหลด pins จากเครื่องขึ้นบัญชี / ดาวน์โหลด pins จากบัญชีลงเครื่อง (Settings) |
 | 🌙 โหมดมืด | เปิด/ปิดโหมดมืด และจำค่าที่เลือก (AsyncStorage) |
+| 👤 โปรไฟล์ | อัปโหลดรูปโปรไฟล์ (อวาตาร์), แก้ไขชื่อแสดง (display name) ผ่าน Settings |
+| 📖 คู่มือการใช้งาน | เปิดดูคู่มือจากหน้าตั้งค่า (User Guide modal) |
 | 📱 หลายแพลตฟอร์ม | iOS, Android, Web |
 | 🎨 UI | ดีไซน์เรียบง่าย; รายการ pins ใช้ FlatList (virtualization) |
 
@@ -129,27 +132,48 @@ PinnitApp/
 │   │   ├── _layout.tsx       # Tab layout
 │   │   ├── index.tsx         # Home — รายการ pins (local + Supabase)
 │   │   ├── map.tsx           # แผนที่ + markers
-│   │   └── settings.tsx      # ตั้งค่า, ล็อกอิน/สมัคร, อัปโหลด/ดาวน์โหลด pins
+│   │   └── settings.tsx      # ตั้งค่า, ล็อกอิน/สมัคร, อัปโหลด/ดาวน์โหลด pins, โปรไฟล์
 │   └── (auth)/               # กลุ่มหน้าจอ Auth (ไม่มี tabs)
+│       ├── _layout.tsx       # Auth stack layout
 │       ├── login.tsx         # เข้าสู่ระบบ (username → email @pinnit.local)
 │       └── sign-up.tsx       # สมัครสมาชิก
 ├── lib/
-│   └── supabase.ts           # Supabase client (Auth + DB)
+│   └── supabase.ts           # Supabase client (Auth + DB + Storage)
 ├── components/
 │   ├── PinItem.tsx           # รายการ pin; swipe-to-delete, long-press แก้ชื่อ, read-only
-│   └── SettingsRow.tsx       # แถวตั้งค่า
+│   ├── SettingsRow.tsx       # แถวตั้งค่า
+│   └── settings/             # คอมโพเนนต์หน้าตั้งค่า
+│       ├── AccountCard.tsx   # การ์ดบัญชี (โปรไฟล์, อวาตาร์, แก้ชื่อ)
+│       ├── AvatarActionSheetModal.tsx
+│       ├── AvatarViewerModal.tsx
+│       ├── EditNameModal.tsx
+│       ├── MapStyleModal.tsx
+│       ├── UserGuideModal.tsx
+│       ├── index.ts
+│       └── types.ts
+├── constants/
+│   ├── about.ts              # ข้อความเกี่ยวกับแอป, นโยบายความเป็นส่วนตัว, เงื่อนไขบริการ
+│   └── settings.ts           # ค่าตั้งค่า (เช่น MAP_STYLE_LABELS)
 ├── types/
 │   └── pinnit.ts             # PinnitItem และ types ที่เกี่ยวข้อง
 ├── utils/
 │   ├── storage.ts            # AsyncStorage (pins, settings, cache, pending sync)
 │   ├── pinsSync.ts           # โหลด/บันทึก/ซิงค์ ระหว่าง local กับ Supabase
 │   ├── geocoding.ts          # getLocationName(lat, lon) — reverse geocoding (fetch)
-│   └── format.ts             # จัดรูปแบบเวลา
+│   ├── format.ts             # จัดรูปแบบเวลา
+│   ├── avatarUpload.ts       # อัปโหลดรูปโปรไฟล์ขึ้น Supabase Storage
+│   └── network.ts            # ตรวจสอบสถานะเครือข่าย (NetInfo)
 ├── docs/
-│   └── TECH_STACK_DOCUMENTATION.md   # รายงานเทคนิคฉบับเต็ม
+│   ├── TECH_STACK_DOCUMENTATION.md   # รายงานเทคนิคฉบับเต็ม
+│   ├── SUPABASE_SETUP.md             # วิธีตั้งค่า Supabase
+│   └── RUN_IOS_ANDROID.md            # วิธีรันบน iOS/Android
 ├── assets/
 ├── .env.example / .env
-├── babel.config.js, tsconfig.json, package.json
+├── babel.config.js
+├── eslint.config.js
+├── tsconfig.json
+├── env.d.ts                  # TypeScript declarations สำหรับ @env
+├── package.json
 └── README.md
 ```
 
@@ -165,11 +189,12 @@ PinnitApp/
 | แผนที่ | react-native-maps (MapView, Marker, Region) |
 | ตำแหน่ง | expo-location (getCurrentPositionAsync, watchPositionAsync, permissions) |
 | เก็บข้อมูลในเครื่อง | @react-native-async-storage/async-storage (pins, settings, cache, sync state) |
-| Backend & DB | Supabase (@supabase/supabase-js) — Auth + ตาราง `pins`, RLS |
+| Backend & DB | Supabase (@supabase/supabase-js) — Auth + ตาราง `pins`, RLS, Storage (รูปโปรไฟล์) |
 | ดึงข้อมูล | fetch (geocoding API), Supabase SDK (select/insert/update/delete) |
 | รายการ | FlatList (virtualization, keyExtractor, renderItem → PinItem) |
-| Env | react-native-dotenv (GEOCODE_*, STORAGE_KEY, SUPABASE_*) |
+| Env | react-native-dotenv (GEOCODE_*, STORAGE_KEY, SUPABASE_*) — อ้างผ่าน `@env` |
 | ไอคอน | @expo/vector-icons (Ionicons) |
+| อื่นๆ | expo-image-picker (รูปโปรไฟล์), @react-native-community/netinfo (สถานะเครือข่าย) |
 
 ---
 
@@ -204,8 +229,9 @@ eas build --platform ios
 ## 🔧 Configuration
 
 - **Environment**: คัดลอก `.env.example` → `.env` แล้วใส่ `GEOCODE_*` และ `SUPABASE_*`
-- **Babel**: ใช้ `react-native-dotenv` ใน `babel.config.js`
-- **Path aliases**: ใช้ `@/` สำหรับ import (เช่น `@/lib/supabase`, `@/utils/pinsSync`, `@/types/pinnit`)
+- **Babel**: ใช้ `react-native-dotenv` ใน `babel.config.js` (ตัวแปร env อ้างผ่าน `@env`)
+- **ESLint**: ใช้ `eslint.config.js` (flat config)
+- **Path aliases**: ใช้ `@/` สำหรับ import (เช่น `@/lib/supabase`, `@/utils/pinsSync`, `@/types/pinnit`, `@/components/settings`)
 - **AsyncStorage keys** (อ้างอิงจากเอกสารเทคนิค): `@pinnit_saved_pins` (local pins), `@pinnit_dark_mode`, `@pinnit_map_style`, `@pinnit_pins_cache`, `@pinnit_pending_sync`, `@pinnit_last_sync_at`
 
 ---
@@ -216,7 +242,7 @@ eas build --platform ios
 |--------|--------|
 | **Home** (`(tabs)/index`) | รายการ pins (local + จาก Supabase เมื่อล็อกอิน), ปุ่ม "ปักหมุดตำแหน่งปัจจุบัน" เพื่อเพิ่ม pin, แตะรายการ → ไป Map ที่ pin นั้น, กดค้างแก้ชื่อ / ปัดลบ (เฉพาะเจ้าของ) |
 | **Map** (`(tabs)/map`) | MapView + markers ทุก pin + ตำแหน่งปัจจุบัน, แตะบนแผนที่เพื่อเพิ่ม pin, เลื่อนมุมมองไปยัง pin ที่เลือกจาก Home |
-| **Settings** (`(tabs)/settings`) | โหมดมืด, สไตล์แผนที่, ล็อกอิน/สมัคร, อัปโหลด pins ขึ้นบัญชี, ดาวน์โหลด pins ลงเครื่อง, export/import, เกี่ยวกับแอป |
+| **Settings** (`(tabs)/settings`) | โหมดมืด, สไตล์แผนที่, ล็อกอิน/สมัคร, โปรไฟล์ (อวาตาร์, แก้ชื่อ), อัปโหลด/ดาวน์โหลด pins, คู่มือการใช้งาน, export/import, เกี่ยวกับแอป นโยบายความเป็นส่วนตัว เงื่อนไขบริการ |
 | **Login** (`(auth)/login`) | เข้าสู่ระบบด้วย username (ภายในใช้ email แบบ username@pinnit.local) |
 | **Sign-up** (`(auth)/sign-up`) | สมัครสมาชิก |
 
@@ -226,6 +252,7 @@ eas build --platform ios
 
 - **Location** — สำหรับตำแหน่งปัจจุบันและติดตามการเคลื่อนที่
 - **Storage** — สำหรับเก็บ pins ในเครื่อง
+- **รูปภาพ (Photos/Media)** — สำหรับเลือกรูปโปรไฟล์ (อวาตาร์) จากแกลเลอรีหรือกล้อง (เมื่อใช้ฟีเจอร์อัปโหลดรูปโปรไฟล์)
 
 ---
 
@@ -245,6 +272,8 @@ eas build --platform ios
 รายงานการออกแบบและเทคนิคที่ใช้ใน PinnitApp (Navigation, Home/FlatList, Fetch, AsyncStorage, GPS/Map, Supabase) อธิบายโดยละเอียดใน:
 
 - **[docs/TECH_STACK_DOCUMENTATION.md](docs/TECH_STACK_DOCUMENTATION.md)** — รายงานฉบับเต็ม (ภาษาไทย)
+- **[docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md)** — วิธีตั้งค่า Supabase สำหรับโปรเจกต์
+- **[docs/RUN_IOS_ANDROID.md](docs/RUN_IOS_ANDROID.md)** — วิธีรันแอปบน iOS และ Android
 
 ---
 
