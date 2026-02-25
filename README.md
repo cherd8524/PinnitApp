@@ -11,15 +11,16 @@
 - [ฟีเจอร์ / Features](#-ฟีเจอร์--features)
 - [เริ่มต้นใช้งาน / Getting Started](#-getting-started)
 - [สคริปต์ / Scripts](#-available-scripts)
-- [โครงสร้างโปรเจกต์ / Project Structure](#-project-structure)
-- [เทคโนโลยี / Tech Stack](#-technology-stack)
+- [โครงสร้างโปรเจกต์ / Project Structure](#%EF%B8%8F-project-structure)
+- [เทคโนโลยี / Tech Stack](#%EF%B8%8F-technology-stack)
 - [การใช้งาน / Usage](#-usage-guide)
 - [การตั้งค่า / Configuration](#-configuration)
 - [หน้าจอแอป / App Screens](#-app-screens)
 - [สิทธิ์แอป / Permissions](#-permissions)
 - [แก้ปัญหา / Troubleshooting](#-troubleshooting)
 - [เอกสารเทคนิค / Tech Docs](#-เอกสารเทคนิค--tech-documentation)
-- [ผู้พัฒนา / Credits](#-developer-information)
+- [ผู้พัฒนา / Credits](#%E2%80%8D-developer-information)
+- [แหล่งอ้างอิง / Resources](#-resources)
 
 ---
 
